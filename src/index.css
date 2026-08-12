@@ -1,0 +1,195 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+ 
+@layer base {
+  :root {
+    --background: 222 47% 11%;
+    --foreground: 210 40% 98%;
+
+    --card: 217 33% 17%;
+    --card-foreground: 210 40% 98%;
+ 
+    --popover: 217 33% 17%;
+    --popover-foreground: 210 40% 98%;
+ 
+    --primary: 239 84% 67%;
+    --primary-foreground: 210 40% 98%;
+ 
+    --secondary: 217 28% 23%;
+    --secondary-foreground: 210 40% 98%;
+ 
+    --muted: 217 28% 23%;
+    --muted-foreground: 215 20.2% 65.1%;
+ 
+    --accent: 217 28% 23%;
+    --accent-foreground: 210 40% 98%;
+ 
+    --destructive: 346 84% 61%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 217 28% 23%;
+    --input: 217 28% 23%;
+    --ring: 239 84% 67%;
+ 
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    --background: 222 47% 11%;
+    --foreground: 210 40% 98%;
+
+    --card: 217 33% 17%;
+    --card-foreground: 210 40% 98%;
+ 
+    --popover: 217 33% 17%;
+    --popover-foreground: 210 40% 98%;
+ 
+    --primary: 239 84% 67%;
+    --primary-foreground: 210 40% 98%;
+ 
+    --secondary: 217 28% 23%;
+    --secondary-foreground: 210 40% 98%;
+ 
+    --muted: 217 28% 23%;
+    --muted-foreground: 215 20.2% 65.1%;
+ 
+    --accent: 217 28% 23%;
+    --accent-foreground: 210 40% 98%;
+ 
+    --destructive: 346 84% 61%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 217 28% 23%;
+    --input: 217 28% 23%;
+    --ring: 239 84% 67%;
+  }
+  
+  :root.light {
+    --background: 210 40% 98%;
+    --foreground: 222 47% 11%;
+ 
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+ 
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+ 
+    --primary: 239 84% 67%;
+    --primary-foreground: 0 0% 98%;
+ 
+    --secondary: 214 32% 91%;
+    --secondary-foreground: 222 47% 11%;
+ 
+    --muted: 214 32% 91%;
+    --muted-foreground: 215 16% 47%;
+ 
+    --accent: 214 32% 91%;
+    --accent-foreground: 222 47% 11%;
+ 
+    --destructive: 346 84% 61%;
+    --destructive-foreground: 0 0% 98%;
+ 
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 239 84% 67%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  
+  html {
+    @apply scroll-smooth;
+    -webkit-text-size-adjust: 100%;
+    font-size: 16px;
+  }
+
+  /* Strict 14px mobile font size requirement */
+  @media (max-width: 768px) {
+    html, body {
+      font-size: 14px !important;
+    }
+  }
+  
+  body {
+    @apply bg-slate-950 text-foreground min-h-screen antialiased selection:bg-indigo-500/30 selection:text-indigo-200;
+    touch-action: pan-x pan-y;
+    overflow-x: hidden;
+  }
+  
+  html.light body {
+    @apply bg-slate-50 text-slate-900;
+  }
+}
+
+/* Glassmorphic Components */
+.glass-card {
+  @apply bg-slate-900/60 backdrop-blur-xl border border-slate-800/80 shadow-xl rounded-2xl transition-all duration-300;
+}
+
+.glass-card:hover {
+  @apply border-indigo-500/30 shadow-indigo-500/5;
+}
+
+html.light .glass-card {
+  @apply bg-white/90 backdrop-blur-xl border border-slate-200 shadow-lg rounded-2xl;
+}
+
+.glass-header {
+  @apply bg-slate-950/80 backdrop-blur-xl border-b border-slate-800/80 sticky top-0 z-40;
+}
+
+html.light .glass-header {
+  @apply bg-white/80 backdrop-blur-xl border-b border-slate-200;
+}
+
+/* Glow effects */
+.glow-primary {
+  box-shadow: 0 0 25px -5px rgba(99, 102, 241, 0.4);
+}
+
+.glow-emerald {
+  box-shadow: 0 0 25px -5px rgba(16, 185, 129, 0.4);
+}
+
+.glow-rose {
+  box-shadow: 0 0 25px -5px rgba(244, 63, 94, 0.4);
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.2);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.4);
+}
+
+/* Notification badge */
+.notification-badge {
+  @apply absolute -top-1 -right-1 h-3.5 w-3.5 bg-rose-500 text-[9px] font-bold flex items-center justify-center text-white rounded-full animate-pulse;
+}
+
+/* Text visibility helpers */
+html.light .text-white-fixed {
+  @apply text-slate-900;
+}
+
+html.light .CircularProgressbar-text {
+  fill: #0f172a !important;
+}
