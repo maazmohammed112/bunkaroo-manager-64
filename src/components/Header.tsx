@@ -19,6 +19,9 @@ const Header: React.FC<HeaderProps> = ({ onSelectTab }) => {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
+  const [showInstallInHeader, setShowInstallInHeader] = useState(() => {
+    return !localStorage.getItem('bunkbuddy_install_header_seen');
+  });
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -29,7 +32,24 @@ const Header: React.FC<HeaderProps> = ({ onSelectTab }) => {
     return () => window.removeEventListener('beforeinstallprompt', handler);
   }, []);
 
+  useEffect(() => {
+    const handleOpenModal = () => {
+      setIsInstallModalOpen(true);
+    };
+    const handleHide = () => setShowInstallInHeader(false);
+
+    window.addEventListener('open-pwa-install-modal', handleOpenModal);
+    window.addEventListener('install-header-hide', handleHide);
+
+    return () => {
+      window.removeEventListener('open-pwa-install-modal', handleOpenModal);
+      window.removeEventListener('install-header-hide', handleHide);
+    };
+  }, []);
+
   const handleInstallClick = () => {
+    localStorage.setItem('bunkbuddy_install_header_seen', 'true');
+    setShowInstallInHeader(false);
     if (deferredPrompt) {
       deferredPrompt.prompt();
       deferredPrompt.userChoice.then(() => {
@@ -75,17 +95,19 @@ const Header: React.FC<HeaderProps> = ({ onSelectTab }) => {
         </button>
 
         <div className="flex items-center space-x-2 sm:space-x-3">
-          {/* PWA Install Button */}
-          <button 
-            onClick={handleInstallClick}
-            data-tour="pwa-install"
-            className="h-10 px-3 sm:px-3.5 rounded-full bg-white dark:bg-[#181A22] border border-[#E8E7EF] dark:border-white/10 text-[#666675] dark:text-[#B9BBC7] hover:text-[#7467E8] hover:border-[#7467E8]/30 flex items-center gap-1.5 transition-all shadow-sm hover:shadow active:scale-95 cursor-pointer text-xs font-semibold select-none"
-            title="Install BunkBuddy as App"
-            aria-label="Install BunkBuddy as App"
-          >
-            <Download size={14} strokeWidth={2.2} className="text-[#7467E8]" />
-            <span className="hidden md:inline">Install App</span>
-          </button>
+          {/* PWA Install Button (Shows only once on first visit, then cleanly shifts to Notifications) */}
+          {showInstallInHeader && (
+            <button 
+              onClick={handleInstallClick}
+              data-tour="pwa-install"
+              className="h-10 px-3 sm:px-3.5 rounded-full bg-white dark:bg-[#181A22] border border-[#E8E7EF] dark:border-white/10 text-[#666675] dark:text-[#B9BBC7] hover:text-[#7467E8] hover:border-[#7467E8]/30 flex items-center gap-1.5 transition-all shadow-sm hover:shadow active:scale-95 cursor-pointer text-xs font-semibold select-none"
+              title="Install BunkBuddy as App"
+              aria-label="Install BunkBuddy as App"
+            >
+              <Download size={14} strokeWidth={2.2} className="text-[#7467E8]" />
+              <span className="hidden md:inline">Install App</span>
+            </button>
+          )}
 
           {/* Notifications Popover */}
           <Popover 

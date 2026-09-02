@@ -126,6 +126,8 @@ export const OnboardingTour: React.FC = () => {
   const handleSkipWelcome = () => {
     setShowWelcome(false);
     localStorage.setItem('bunkbuddy_tutorial_seen', 'true');
+    localStorage.setItem('bunkbuddy_install_header_seen', 'true');
+    window.dispatchEvent(new CustomEvent('install-header-hide'));
   };
 
   const handleNext = () => {
@@ -145,6 +147,8 @@ export const OnboardingTour: React.FC = () => {
   const handleFinish = () => {
     setIsTourActive(false);
     localStorage.setItem('bunkbuddy_tutorial_seen', 'true');
+    localStorage.setItem('bunkbuddy_install_header_seen', 'true');
+    window.dispatchEvent(new CustomEvent('install-header-hide'));
   };
 
   // Calculate card position so it never overflows or clips

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Bell, AlertTriangle, CheckCircle, Info, ShieldCheck } from 'lucide-react';
+import { Bell, AlertTriangle, CheckCircle, Info, ShieldCheck, Download } from 'lucide-react';
 import { db } from '@/utils/storageDB';
 
 interface Subject {
@@ -35,6 +35,16 @@ const Notifications: React.FC = () => {
       message: "Welcome to your semester workspace. Need help or want to replay the interface walkthrough? Find me here anytime in notifications or in Profile settings.",
       date: now,
       read: false,
+    });
+
+    // PWA Install Notice in Notification Bar (permanent home after header)
+    items.push({
+      id: 'install-pwa-notice',
+      type: 'security',
+      title: 'Install BunkBuddy App',
+      message: 'Add BunkBuddy to your home screen or desktop for 100% offline access and a fullscreen app experience.',
+      date: now,
+      read: false
     });
 
     // Witty user privacy & responsibility notification requested by user
@@ -121,9 +131,23 @@ const Notifications: React.FC = () => {
                         e.stopPropagation();
                         window.dispatchEvent(new CustomEvent('start-bunkbuddy-tour'));
                       }}
-                      className="mt-2.5 px-3.5 py-1.5 rounded-full text-[10px] font-bold text-white bg-[#7467E8] hover:bg-[#6658DF] shadow-xs transition-transform active:scale-95 cursor-pointer flex items-center gap-1.5"
+                      className="mt-2.5 px-3.5 py-1.5 rounded-full text-[10px] font-bold text-white bg-[#7467E8] hover:bg-[#6658DF] shadow-xs transition-transform active:scale-95 cursor-pointer inline-flex items-center gap-1.5"
                     >
                       Start App Tutorial
+                    </button>
+                  )}
+
+                  {item.id === 'install-pwa-notice' && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        window.dispatchEvent(new CustomEvent('open-pwa-install-modal'));
+                      }}
+                      className="mt-2.5 px-3.5 py-1.5 rounded-full text-[10px] font-bold text-white bg-[#7467E8] hover:bg-[#6658DF] shadow-xs transition-transform active:scale-95 cursor-pointer inline-flex items-center gap-1.5"
+                    >
+                      <Download size={11} strokeWidth={2.5} />
+                      Install BunkBuddy App
                     </button>
                   )}
                 </div>
