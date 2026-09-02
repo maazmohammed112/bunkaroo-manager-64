@@ -23,7 +23,11 @@ import {
   ArrowDown,
   Calculator,
   Flame,
-  Zap
+  Zap,
+  Sparkles,
+  RotateCcw,
+  Minus,
+  Plus
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -60,6 +64,13 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { 
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from "@/components/ui/select";
 import { toast } from 'sonner';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
@@ -94,6 +105,18 @@ const Statistics: React.FC = () => {
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+  // What-If Simulator State
+  const [simSubjectId, setSimSubjectId] = useState<string>('all');
+  const [simMissClasses, setSimMissClasses] = useState<number>(1);
+  const [simAttendClasses, setSimAttendClasses] = useState<number>(0);
+  const [simLeaveDays, setSimLeaveDays] = useState<number>(0);
+
+  const resetSimulation = () => {
+    setSimMissClasses(1);
+    setSimAttendClasses(0);
+    setSimLeaveDays(0);
+  };
 
   const handleExport = () => {
     const backup = {
@@ -299,6 +322,50 @@ const Statistics: React.FC = () => {
   const totalBunkableAll = subjects.reduce((sum, s) => sum + calculateBunkableClasses(s), 0);
   const totalRecoveryAll = subjects.reduce((sum, s) => sum + calculateRequiredClasses(s), 0);
 
+  // Simulator Derived Calculations
+  const simSelectedSubject = subjects.find((s) => s.id === simSubjectId);
+  const simBaseTotal = simSelectedSubject
+    ? simSelectedSubject.totalClasses
+    : subjects.reduce((sum, s) => sum + s.totalClasses, 0);
+
+  const simBaseAttended = simSelectedSubject
+    ? simSelectedSubject.attendedClasses
+    : subjects.reduce((sum, s) => sum + s.attendedClasses, 0);
+
+  const simReqThreshold = simSelectedSubject
+    ? (simSelectedSubject.requiredAttendance || 75)
+    : 75;
+
+  const currentPercentage = simBaseTotal === 0 ? 0 : Math.round((simBaseAttended / simBaseTotal) * 100);
+
+  // Estimate missed classes if taking whole days off next week
+  const daysOffMissedClasses = simSelectedSubject
+    ? Math.max(1, Math.round(((simSelectedSubject.days?.length || 3) / 5) * simLeaveDays))
+    : Math.max(1, Math.round(subjects.length * (simLeaveDays / 5) * 3.5));
+
+  const totalSimMissed = simLeaveDays > 0 ? daysOffMissedClasses : simMissClasses;
+
+  const simProjectedTotal = simBaseTotal + totalSimMissed + simAttendClasses;
+  const simProjectedAttended = simBaseAttended + simAttendClasses;
+  const simProjectedPercentage = simProjectedTotal === 0 ? 0 : Math.round((simProjectedAttended / simProjectedTotal) * 100);
+
+  const simPercentageDiff = simProjectedPercentage - currentPercentage;
+  const isSimProjectedSafe = simProjectedPercentage >= simReqThreshold;
+
+  const simProjectedBunks = Math.max(
+    0,
+    Math.floor((simProjectedAttended - (simReqThreshold / 100) * simProjectedTotal) / (simReqThreshold / 100))
+  );
+
+  const simProjectedRecoveryNeeded = Math.max(
+    0,
+    Math.ceil(((simReqThreshold / 100) * simProjectedTotal - simProjectedAttended) / (1 - simReqThreshold / 100))
+  );
+
+  const simProjectedOutcomeText = isSimProjectedSafe
+    ? `You remain in the safe zone with ${simProjectedBunks} buffer bunkable lectures remaining above ${simReqThreshold}%.`
+    : `Warning: Attendance drops below your ${simReqThreshold}% requirement. You will need to attend ${simProjectedRecoveryNeeded} straight lectures to recover.`;
+
   return (
     <div className="space-y-7 text-foreground font-sans max-w-7xl mx-auto">
       {/* Header Bar */}
@@ -500,6 +567,207 @@ const Statistics: React.FC = () => {
               </span>
             </Card>
           </div>
+
+          {/* Interactive What-If Bunk & Leave Simulator */}
+          <Card className="glass-card p-6 rounded-[28px] border-[#7467E8]/25 shadow-sm space-y-5">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-3 border-b border-[#E8E7EF] dark:border-white/[0.08]">
+              <div className="flex items-center gap-2.5">
+                <div className="h-10 w-10 rounded-2xl bg-[#E8E4FF] dark:bg-[#7467E8]/20 text-[#7467E8] flex items-center justify-center flex-shrink-0">
+                  <Sparkles size={18} strokeWidth={2} />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-bold text-foreground font-display flex items-center gap-2">
+                    What-If Bunk & Leave Simulator
+                  </h3>
+                  <p className="text-xs text-[#666675] dark:text-[#9292A2] font-medium">
+                    Test skipping classes or taking days off to preview your projected percentage
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <Select value={simSubjectId} onValueChange={setSimSubjectId}>
+                  <SelectTrigger className="w-full sm:w-56 h-9 rounded-full text-xs font-semibold">
+                    <SelectValue placeholder="Select Subject" />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-2xl">
+                    <SelectItem value="all" className="text-xs font-semibold">
+                      Semester Average (All Subjects)
+                    </SelectItem>
+                    {subjects.map((s) => (
+                      <SelectItem key={s.id} value={s.id} className="text-xs font-medium">
+                        {s.name} ({s.totalClasses === 0 ? 0 : Math.round((s.attendedClasses / s.totalClasses) * 100)}%)
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  onClick={resetSimulation}
+                  className="h-9 px-3 rounded-full text-xs font-semibold text-[#666675] dark:text-[#9292A2] hover:text-foreground cursor-pointer"
+                  title="Reset simulation values"
+                >
+                  <RotateCcw size={13} className="mr-1" />
+                  Reset
+                </Button>
+              </div>
+            </div>
+
+            {/* Steppers & Leave Sliders Row */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Stepper 1: Miss Individual Classes */}
+              <div className="p-4 rounded-2xl bg-[#F6F6FA] dark:bg-[#15161F] border border-[#E8E7EF] dark:border-white/[0.08] space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-bold text-foreground">
+                    Miss Upcoming Classes
+                  </span>
+                  <span className="text-xs font-bold text-rose-600 dark:text-rose-400 bg-rose-500/10 px-2.5 py-0.5 rounded-full">
+                    {simMissClasses} {simMissClasses === 1 ? 'class' : 'classes'}
+                  </span>
+                </div>
+                <p className="text-[11px] text-[#666675] dark:text-[#9292A2] leading-tight">
+                  Simulate skipping lectures of this subject
+                </p>
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setSimMissClasses(Math.max(0, simMissClasses - 1))}
+                    disabled={simMissClasses <= 0}
+                    className="h-8 w-8 rounded-full bg-white dark:bg-[#20222C] border border-[#E8E7EF] dark:border-white/10 flex items-center justify-center text-foreground hover:bg-[#F1F0F8] dark:hover:bg-[#282B37] disabled:opacity-40 cursor-pointer active:scale-95 transition-all"
+                  >
+                    <Minus size={13} strokeWidth={2.5} />
+                  </button>
+                  <div className="flex-1 text-center font-display font-bold text-base text-foreground">
+                    {simMissClasses}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSimMissClasses(simMissClasses + 1)}
+                    className="h-8 w-8 rounded-full bg-white dark:bg-[#20222C] border border-[#E8E7EF] dark:border-white/10 flex items-center justify-center text-foreground hover:bg-[#F1F0F8] dark:hover:bg-[#282B37] cursor-pointer active:scale-95 transition-all"
+                  >
+                    <Plus size={13} strokeWidth={2.5} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Stepper 2: Leave Next Week (Days Off) */}
+              <div className="p-4 rounded-2xl bg-[#F6F6FA] dark:bg-[#15161F] border border-[#E8E7EF] dark:border-white/[0.08] space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-bold text-foreground">
+                    Take Leave Next Week
+                  </span>
+                  <span className="text-xs font-bold text-[#7467E8] dark:text-[#A59BFF] bg-[#7467E8]/10 px-2.5 py-0.5 rounded-full">
+                    {simLeaveDays === 0 ? 'None' : `${simLeaveDays} ${simLeaveDays === 1 ? 'day' : 'days'}`}
+                  </span>
+                </div>
+                <p className="text-[11px] text-[#666675] dark:text-[#9292A2] leading-tight">
+                  {simLeaveDays > 0 
+                    ? `Misses approx ${daysOffMissedClasses} scheduled lectures`
+                    : 'Select days off to simulate full-day leaves'}
+                </p>
+                <div className="flex items-center gap-1.5 pt-1 overflow-x-auto">
+                  {[0, 1, 2, 3, 5].map((d) => (
+                    <button
+                      key={d}
+                      type="button"
+                      onClick={() => setSimLeaveDays(d)}
+                      className={`flex-1 py-1.5 px-2 rounded-xl text-xs font-bold transition-all cursor-pointer text-center ${
+                        simLeaveDays === d
+                          ? 'bg-[#7467E8] text-white shadow-xs'
+                          : 'bg-white dark:bg-[#20222C] text-[#666675] dark:text-[#9292A2] hover:text-foreground border border-[#E8E7EF] dark:border-white/10'
+                      }`}
+                    >
+                      {d === 0 ? '0d' : `${d}d`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Stepper 3: Attend Consecutive Classes (Recovery) */}
+              <div className="p-4 rounded-2xl bg-[#F6F6FA] dark:bg-[#15161F] border border-[#E8E7EF] dark:border-white/[0.08] space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-bold text-foreground">
+                    Attend Next Classes
+                  </span>
+                  <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded-full">
+                    +{simAttendClasses} attended
+                  </span>
+                </div>
+                <p className="text-[11px] text-[#666675] dark:text-[#9292A2] leading-tight">
+                  Simulate attending consecutive classes straight
+                </p>
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setSimAttendClasses(Math.max(0, simAttendClasses - 1))}
+                    disabled={simAttendClasses <= 0}
+                    className="h-8 w-8 rounded-full bg-white dark:bg-[#20222C] border border-[#E8E7EF] dark:border-white/10 flex items-center justify-center text-foreground hover:bg-[#F1F0F8] dark:hover:bg-[#282B37] disabled:opacity-40 cursor-pointer active:scale-95 transition-all"
+                  >
+                    <Minus size={13} strokeWidth={2.5} />
+                  </button>
+                  <div className="flex-1 text-center font-display font-bold text-base text-foreground">
+                    {simAttendClasses}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSimAttendClasses(simAttendClasses + 1)}
+                    className="h-8 w-8 rounded-full bg-white dark:bg-[#20222C] border border-[#E8E7EF] dark:border-white/10 flex items-center justify-center text-foreground hover:bg-[#F1F0F8] dark:hover:bg-[#282B37] cursor-pointer active:scale-95 transition-all"
+                  >
+                    <Plus size={13} strokeWidth={2.5} />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Live Projected Outcome Strip */}
+            <div className={`p-4 rounded-[22px] border transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 ${
+              isSimProjectedSafe 
+                ? 'bg-[#DDEDEA]/50 dark:bg-emerald-500/10 border-emerald-500/25' 
+                : 'bg-[#F7DDE9]/50 dark:bg-rose-500/10 border-rose-500/25'
+            }`}>
+              <div className="space-y-1">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#666675] dark:text-[#9292A2]">
+                  Simulated Outcome Preview
+                </span>
+                <div className="flex items-center gap-3">
+                  <span className="text-xl font-bold font-display text-[#666675] dark:text-[#9292A2]">
+                    Current: <strong className="text-foreground">{currentPercentage}%</strong>
+                  </span>
+                  <span className="text-foreground/40 font-bold">➔</span>
+                  <span className="text-2xl font-extrabold font-display tracking-tight text-foreground">
+                    Projected: <span className={isSimProjectedSafe ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>{simProjectedPercentage}%</span>
+                  </span>
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                    simPercentageDiff > 0 
+                      ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300' 
+                      : simPercentageDiff < 0 
+                      ? 'bg-rose-500/15 text-rose-700 dark:text-rose-300' 
+                      : 'bg-muted text-muted-foreground'
+                  }`}>
+                    {simPercentageDiff > 0 ? `+${simPercentageDiff}%` : `${simPercentageDiff}%`}
+                  </span>
+                </div>
+                <p className="text-xs text-foreground/80 font-medium">
+                  {simProjectedOutcomeText}
+                </p>
+              </div>
+
+              <div className="flex sm:flex-col items-end gap-1 flex-shrink-0">
+                <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                  isSimProjectedSafe 
+                    ? 'bg-[#DDEDEA] dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-300' 
+                    : 'bg-[#F7DDE9] dark:bg-rose-500/20 text-rose-800 dark:text-rose-300'
+                }`}>
+                  {isSimProjectedSafe ? 'Safe Zone' : 'Danger Zone'}
+                </span>
+                <span className="text-[11px] text-[#666675] dark:text-[#9292A2] font-medium">
+                  Target: {simReqThreshold}%
+                </span>
+              </div>
+            </div>
+          </Card>
 
           {/* Interactive Chart Section */}
           <Card className="glass-card p-6 space-y-6">

@@ -138,6 +138,8 @@ class StorageDB {
       bunkbuddy_user: this.getSync('bunkbuddy_user', null),
       subjects: this.getSync('subjects', []),
       notes: this.getSync('notes', []),
+      timetable_settings: this.getSync('timetable_settings', null),
+      attendance_daily_logs: this.getSync('attendance_daily_logs', {}),
       active_tab: this.getSync('active_tab', 'timetable'),
       export_date: new Date().toISOString()
     };
@@ -180,6 +182,12 @@ class StorageDB {
         }
         if (parsed.userData) {
           this.set('userData', parsed.userData);
+        }
+        if (parsed.timetable_settings) {
+          this.set('timetable_settings', parsed.timetable_settings);
+        }
+        if (parsed.attendance_daily_logs) {
+          this.set('attendance_daily_logs', parsed.attendance_daily_logs);
         }
         return true;
       }

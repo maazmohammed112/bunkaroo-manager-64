@@ -28,7 +28,7 @@ const AddSubjectForm: React.FC = () => {
   const [totalClasses, setTotalClasses] = useState(0);
   const [attendedClasses, setAttendedClasses] = useState(0);
 
-  const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
   useEffect(() => {
     const loaded = db.getSync<Subject[]>('subjects', []);
