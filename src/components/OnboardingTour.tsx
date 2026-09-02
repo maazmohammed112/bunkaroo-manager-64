@@ -9,6 +9,11 @@ export interface TourStep {
 
 const TOUR_STEPS: TourStep[] = [
   {
+    target: 'pwa-install',
+    title: 'Install as Mobile & Desktop App',
+    description: "Install BunkBuddy to your phone or laptop! Tap your browser menu (⋮ on Android/Chrome or Share on Safari) and choose 'Add to Home Screen' or 'Install App' for instant offline access."
+  },
+  {
     target: 'timetable',
     title: 'Weekly Schedule & Attendance',
     description: 'Your weekly game plan lives here. See classes, track attendance, and know what’s coming up.'
@@ -20,8 +25,8 @@ const TOUR_STEPS: TourStep[] = [
   },
   {
     target: 'statistics',
-    title: 'Bunk Math & Statistics',
-    description: 'Bunk Math does the scary attendance calculations so you don’t have to.'
+    title: 'Bunk Math & Cross-Device Backup',
+    description: 'Bunk Math calculates safe bunk limits and recovery classes. Plus, use Export & Import here to transfer your data across your phone, tablet, and laptop anytime.'
   },
   {
     target: 'pomodoro',
@@ -223,9 +228,30 @@ export const OnboardingTour: React.FC = () => {
                 <h3 className="text-xl font-bold font-display tracking-tight text-foreground">
                   Your Semester Game Plan
                 </h3>
-                <p className="text-xs text-[#666675] dark:text-[#9292A2] leading-relaxed font-medium pt-1">
-                  Master your attendance criteria, calculate bunk limits safely, and stay on top of your schedule. Take a 30-second tour of the interface.
+                <p className="text-xs text-[#666675] dark:text-[#9292A2] leading-relaxed font-medium">
+                  Master your attendance criteria, calculate bunk limits safely, and take control of your schedule.
                 </p>
+              </div>
+
+              {/* Cross-Device & PWA Callout Cards */}
+              <div className="space-y-2 text-left pt-1">
+                <div className="p-3 rounded-2xl bg-[#F6F6FA] dark:bg-[#15161F] border border-[#E8E7EF] dark:border-white/[0.08] space-y-0.5">
+                  <span className="text-[11px] font-bold text-foreground block">
+                    Cross-Device Freedom
+                  </span>
+                  <p className="text-[11px] text-[#666675] dark:text-[#9292A2] leading-relaxed">
+                    Export your data backup from one device and import it on another phone or laptop anytime.
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-2xl bg-[#F6F6FA] dark:bg-[#15161F] border border-[#E8E7EF] dark:border-white/[0.08] space-y-0.5">
+                  <span className="text-[11px] font-bold text-foreground block">
+                    Install to Home Screen (PWA)
+                  </span>
+                  <p className="text-[11px] text-[#666675] dark:text-[#9292A2] leading-relaxed">
+                    Tap your browser menu (⋮ or Share) and click "Add to Home Screen" for instant offline access.
+                  </p>
+                </div>
               </div>
 
               <div className="space-y-2 pt-2">

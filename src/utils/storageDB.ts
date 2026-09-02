@@ -147,21 +147,43 @@ class StorageDB {
   /**
    * Restore full backup object
    */
-  public importBackup(encryptedData: string): boolean {
+  public importBackup(rawData: string): boolean {
     try {
-      const decoded = decodeURIComponent(escape(atob(encryptedData.trim())));
-      const parsed = JSON.parse(decoded);
+      let parsed: any;
+      const trimmed = rawData.trim();
 
-      if (parsed.subjects && Array.isArray(parsed.subjects)) {
-        this.set('subjects', parsed.subjects);
+      if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+        parsed = JSON.parse(trimmed);
+      } else {
+        try {
+          const decoded = decodeURIComponent(escape(atob(trimmed)));
+          parsed = JSON.parse(decoded);
+        } catch {
+          parsed = JSON.parse(trimmed);
+        }
       }
-      if (parsed.notes && Array.isArray(parsed.notes)) {
-        this.set('notes', parsed.notes);
+
+      if (Array.isArray(parsed)) {
+        this.set('subjects', parsed);
+        return true;
       }
-      if (parsed.bunkbuddy_user) {
-        this.set('bunkbuddy_user', parsed.bunkbuddy_user);
+
+      if (parsed && typeof parsed === 'object') {
+        if (parsed.subjects && Array.isArray(parsed.subjects)) {
+          this.set('subjects', parsed.subjects);
+        }
+        if (parsed.notes && Array.isArray(parsed.notes)) {
+          this.set('notes', parsed.notes);
+        }
+        if (parsed.bunkbuddy_user) {
+          this.set('bunkbuddy_user', parsed.bunkbuddy_user);
+        }
+        if (parsed.userData) {
+          this.set('userData', parsed.userData);
+        }
+        return true;
       }
-      return true;
+      return false;
     } catch (e) {
       console.error('Import failed', e);
       return false;

@@ -90,9 +90,91 @@ const Statistics: React.FC = () => {
   const [editTotalClasses, setEditTotalClasses] = useState(0);
   const [editAttendedClasses, setEditAttendedClasses] = useState(0);
   const [editRequiredAttendance, setEditRequiredAttendance] = useState(75);
-  const [editDays, setEditDays] = useState<string[]>([]);
   const [subjectToDelete, setSubjectToDelete] = useState<Subject | null>(null);
+  const [isExportOpen, setIsExportOpen] = useState(false);
+  const [isImportOpen, setIsImportOpen] = useState(false);
   const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+  const handleExport = () => {
+    const backup = {
+      app: 'BunkBuddy',
+      version: '1.0',
+      exportedAt: new Date().toISOString(),
+      subjects: db.getSync<Subject[]>('subjects', []),
+      notes: db.getSync('notes', []),
+      userData: db.getSync('userData', null)
+    };
+    const jsonString = JSON.stringify(backup, null, 2);
+    setExportData(jsonString);
+    setIsExportOpen(true);
+  };
+
+  const handleDownloadFile = () => {
+    if (!exportData) return;
+    const blob = new Blob([exportData], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `bunkbuddy-backup-${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success('Backup file downloaded');
+  };
+
+  const handleImport = () => {
+    if (!importData.trim()) {
+      toast.error('Please paste your backup JSON code or choose a file');
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(importData);
+      let importedSubjects: Subject[] = [];
+
+      if (Array.isArray(parsed)) {
+        importedSubjects = parsed;
+      } else if (parsed && typeof parsed === 'object') {
+        if (Array.isArray(parsed.subjects)) {
+          importedSubjects = parsed.subjects;
+        }
+        if (Array.isArray(parsed.notes)) {
+          db.set('notes', parsed.notes);
+        }
+        if (parsed.userData) {
+          db.set('userData', parsed.userData);
+        }
+      }
+
+      if (!importedSubjects.length) {
+        toast.error('No valid subjects found in backup code');
+        return;
+      }
+
+      setSubjects(importedSubjects);
+      db.set('subjects', importedSubjects);
+      calculateStatistics(importedSubjects);
+      setImportData('');
+      setIsImportOpen(false);
+      toast.success(`Successfully restored ${importedSubjects.length} subjects!`);
+    } catch (err) {
+      toast.error('Invalid JSON backup code. Please check formatting.');
+    }
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target?.result as string;
+      setImportData(content);
+      toast.info('File loaded! Click "Restore Data" to apply.');
+    };
+    reader.readAsText(file);
+  };
 
   useEffect(() => {
     loadSubjects();
@@ -150,27 +232,6 @@ const Statistics: React.FC = () => {
     // Formula: ceil((reqPct * total - attended) / (1 - reqPct))
     const required = Math.ceil((reqPct * subject.totalClasses - subject.attendedClasses) / (1 - reqPct));
     return Math.max(0, required);
-  };
-
-  const handleExport = () => {
-    const backup = db.exportBackup();
-    setExportData(backup);
-    toast.success('Backup export code generated');
-  };
-
-  const handleImport = () => {
-    if (!importData.trim()) {
-      toast.error('Please paste valid backup code');
-      return;
-    }
-    const success = db.importBackup(importData);
-    if (success) {
-      toast.success('Data imported successfully');
-      loadSubjects();
-      setImportData('');
-    } else {
-      toast.error('Invalid backup code format');
-    }
   };
 
   const handleDeleteSubject = (id: string) => {
@@ -257,30 +318,46 @@ const Statistics: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
-          <Dialog>
+          {/* Export Dialog */}
+          <Dialog open={isExportOpen} onOpenChange={setIsExportOpen}>
             <DialogTrigger asChild>
-              <Button variant="outline" size="sm" onClick={handleExport} className="rounded-full gap-1.5 text-xs font-semibold">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={handleExport} 
+                className="rounded-full gap-1.5 text-xs font-semibold cursor-pointer"
+                data-tour="export-backup"
+              >
                 <Download size={14} strokeWidth={2} />
                 Export Backup
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="max-w-md">
               <DialogHeader>
                 <DialogTitle className="font-display text-lg font-bold text-foreground">
                   Export Data Backup
                 </DialogTitle>
                 <DialogDescription className="text-xs text-[#666675] dark:text-[#9292A2]">
-                  Copy this code to transfer your subjects and notes to another device.
+                  Copy this code or download as a file to transfer your subjects and notes across devices.
                 </DialogDescription>
               </DialogHeader>
               <Textarea 
                 value={exportData} 
                 readOnly 
-                className="font-mono text-xs h-32" 
+                className="font-mono text-[11px] h-36 bg-[#F8F8FC] dark:bg-[#15161F]" 
               />
-              <DialogFooter>
+              <DialogFooter className="flex flex-col sm:flex-row gap-2 pt-2">
+                <Button 
+                  variant="outline"
+                  onClick={handleDownloadFile}
+                  className="rounded-full text-xs font-semibold gap-1.5"
+                >
+                  <Download size={13} />
+                  Download File
+                </Button>
                 <Button 
                   onClick={() => { navigator.clipboard.writeText(exportData); toast.success('Copied to clipboard'); }}
+                  className="rounded-full text-xs font-bold gap-1.5"
                 >
                   Copy to Clipboard
                 </Button>
@@ -288,31 +365,47 @@ const Statistics: React.FC = () => {
             </DialogContent>
           </Dialog>
 
-          <Dialog>
+          {/* Import Dialog */}
+          <Dialog open={isImportOpen} onOpenChange={setIsImportOpen}>
             <DialogTrigger asChild>
-              <Button variant="outline" size="sm" className="rounded-full gap-1.5 text-xs font-semibold">
+              <Button variant="outline" size="sm" className="rounded-full gap-1.5 text-xs font-semibold cursor-pointer">
                 <Upload size={14} strokeWidth={2} />
                 Import Backup
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="max-w-md">
               <DialogHeader>
                 <DialogTitle className="font-display text-lg font-bold text-foreground">
                   Import Data Backup
                 </DialogTitle>
                 <DialogDescription className="text-xs text-[#666675] dark:text-[#9292A2]">
-                  Paste backup code from another device to restore all data.
+                  Paste backup code or upload a saved JSON file to restore all your subjects and notes.
                 </DialogDescription>
               </DialogHeader>
-              <Textarea 
-                placeholder="Paste backup code here..." 
-                value={importData} 
-                onChange={(e) => setImportData(e.target.value)} 
-                className="font-mono text-xs h-32" 
-              />
-              <DialogFooter>
-                <Button onClick={handleImport}>
-                  Import Restore
+              
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <label className="text-xs font-medium text-[#666675] dark:text-[#9292A2] cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-dashed border-[#7467E8]/50 hover:bg-[#7467E8]/5 transition-colors">
+                    <Upload size={13} className="text-[#7467E8]" />
+                    <span>Upload JSON Backup File</span>
+                    <input type="file" accept=".json" onChange={handleFileUpload} className="hidden" />
+                  </label>
+                </div>
+
+                <Textarea 
+                  placeholder="Or paste your backup JSON code here..." 
+                  value={importData} 
+                  onChange={(e) => setImportData(e.target.value)} 
+                  className="font-mono text-[11px] h-32 bg-[#F8F8FC] dark:bg-[#15161F]" 
+                />
+              </div>
+
+              <DialogFooter className="gap-2 sm:gap-0 pt-2">
+                <Button variant="outline" onClick={() => setIsImportOpen(false)} className="rounded-full text-xs">
+                  Cancel
+                </Button>
+                <Button onClick={handleImport} className="rounded-full text-xs font-bold px-5">
+                  Restore Data
                 </Button>
               </DialogFooter>
             </DialogContent>

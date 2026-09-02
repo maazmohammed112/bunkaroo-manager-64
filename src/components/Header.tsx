@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bell, User, X } from 'lucide-react';
+import { Bell, User, X, Download, Smartphone } from 'lucide-react';
 import { useUser } from '@/contexts/UserContext';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import Profile from '@/components/Profile';
 import Notifications from '@/components/Notifications';
 import { db } from '@/utils/storageDB';
@@ -16,6 +17,28 @@ const Header: React.FC<HeaderProps> = ({ onSelectTab }) => {
   const { userData } = useUser();
   const [activePopover, setActivePopover] = useState<string | null>(null);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
+
+  const handleInstallClick = () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      deferredPrompt.userChoice.then(() => {
+        setDeferredPrompt(null);
+      });
+    } else {
+      setIsInstallModalOpen(true);
+    }
+  };
 
   const handleLogoClick = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -52,6 +75,18 @@ const Header: React.FC<HeaderProps> = ({ onSelectTab }) => {
         </button>
 
         <div className="flex items-center space-x-2 sm:space-x-3">
+          {/* PWA Install Button */}
+          <button 
+            onClick={handleInstallClick}
+            data-tour="pwa-install"
+            className="h-10 px-3 sm:px-3.5 rounded-full bg-white dark:bg-[#181A22] border border-[#E8E7EF] dark:border-white/10 text-[#666675] dark:text-[#B9BBC7] hover:text-[#7467E8] hover:border-[#7467E8]/30 flex items-center gap-1.5 transition-all shadow-sm hover:shadow active:scale-95 cursor-pointer text-xs font-semibold select-none"
+            title="Install BunkBuddy as App"
+            aria-label="Install BunkBuddy as App"
+          >
+            <Download size={14} strokeWidth={2.2} className="text-[#7467E8]" />
+            <span className="hidden md:inline">Install App</span>
+          </button>
+
           {/* Notifications Popover */}
           <Popover 
             open={activePopover === 'notifications'} 
@@ -120,6 +155,37 @@ const Header: React.FC<HeaderProps> = ({ onSelectTab }) => {
           </Sheet>
         </div>
       </div>
+
+      {/* PWA Install Guide Dialog */}
+      <Dialog open={isInstallModalOpen} onOpenChange={setIsInstallModalOpen}>
+        <DialogContent className="max-w-md rounded-[28px]">
+          <DialogHeader>
+            <DialogTitle className="font-display text-lg font-bold text-foreground flex items-center gap-2">
+              <Smartphone size={18} className="text-[#7467E8]" />
+              Install BunkBuddy
+            </DialogTitle>
+            <DialogDescription className="text-xs text-[#666675] dark:text-[#9292A2]">
+              Use BunkBuddy offline like a native app on your phone or laptop with instant access.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2 text-xs">
+            <div className="p-3.5 rounded-2xl bg-[#F6F6FA] dark:bg-[#15161F] border border-[#E8E7EF] dark:border-white/[0.08] space-y-1">
+              <span className="font-bold text-foreground">Chrome / Edge (Desktop & Android):</span>
+              <p className="text-[#666675] dark:text-[#9292A2] leading-relaxed">
+                Click the three dots (⋮) at the top right of your browser, then click <strong>"Install BunkBuddy"</strong> or <strong>"Add to Home Screen"</strong>.
+              </p>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-[#F6F6FA] dark:bg-[#15161F] border border-[#E8E7EF] dark:border-white/[0.08] space-y-1">
+              <span className="font-bold text-foreground">Safari (iPhone & iPad):</span>
+              <p className="text-[#666675] dark:text-[#9292A2] leading-relaxed">
+                Tap the <strong>Share</strong> button at the bottom of the screen, scroll down, and tap <strong>"Add to Home Screen"</strong>.
+              </p>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </header>
   );
 };
