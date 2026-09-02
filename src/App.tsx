@@ -11,7 +11,6 @@ import SignUp from "./pages/SignUp";
 import Welcome from "./components/Welcome";
 import NotFound from "./pages/NotFound";
 import { UserProvider } from "./contexts/UserContext";
-import { Agentation } from "agentation";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -25,7 +24,6 @@ const queryClient = new QueryClient({
 const AppRoutes = () => {
   return (
     <BrowserRouter>
-      <Agentation />
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/landing" element={<Landing />} />
