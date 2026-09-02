@@ -1,0 +1,193 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+ 
+@layer base {
+  :root {
+    /* LIGHT THEME (DEFAULT) - inspired by reference image */
+    --background: 240 20% 98%;      /* #F6F6FA */
+    --foreground: 240 14% 10%;      /* #15151C */
+
+    --card: 0 0% 100%;              /* #FFFFFF */
+    --card-foreground: 240 14% 10%; /* #15151C */
+ 
+    --popover: 0 0% 100%;           /* #FFFFFF */
+    --popover-foreground: 240 14% 10%;
+ 
+    --primary: 246 75% 66%;         /* #7467E8 */
+    --primary-foreground: 0 0% 100%;
+ 
+    --secondary: 247 33% 96%;       /* #F1F0F8 */
+    --secondary-foreground: 240 7% 43%; /* #666675 */
+ 
+    --muted: 247 33% 96%;           /* #F1F0F8 */
+    --muted-foreground: 240 9% 61%; /* #9292A2 */
+ 
+    --accent: 248 100% 95%;         /* #E8E4FF Soft Lavender */
+    --accent-foreground: 246 75% 66%; /* #7467E8 */
+ 
+    --destructive: 346 84% 61%;     /* #F43F5E */
+    --destructive-foreground: 0 0% 100%;
+ 
+    --border: 248 17% 92%;          /* #E8E7EF */
+    --input: 248 17% 92%;           /* #E8E7EF */
+    --ring: 246 75% 66%;            /* #7467E8 */
+ 
+    --radius: 1.25rem;              /* 20px */
+  }
+
+  .dark {
+    /* MATCHING DARK THEME */
+    --background: 231 17% 8%;       /* #111218 */
+    --foreground: 240 20% 97%;      /* #F7F7FA */
+
+    --card: 231 17% 11%;            /* #181A22 */
+    --card-foreground: 240 20% 97%; /* #F7F7FA */
+ 
+    --popover: 231 17% 11%;         /* #181A22 */
+    --popover-foreground: 240 20% 97%;
+ 
+    --primary: 246 75% 72%;         /* #8276F5 */
+    --primary-foreground: 0 0% 100%;
+ 
+    --secondary: 232 16% 15%;       /* #20222C */
+    --secondary-foreground: 230 11% 75%; /* #B9BBC7 */
+ 
+    --muted: 232 16% 15%;           /* #20222C */
+    --muted-foreground: 230 8% 56%; /* #888B98 */
+ 
+    --accent: 232 16% 20%;          /* #252733 */
+    --accent-foreground: 246 75% 72%;
+ 
+    --destructive: 346 84% 61%;
+    --destructive-foreground: 0 0% 100%;
+ 
+    --border: 232 16% 18%;          /* subtle dark border */
+    --input: 232 16% 18%;
+    --ring: 246 75% 72%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  
+  html {
+    @apply scroll-smooth;
+    -webkit-text-size-adjust: 100%;
+    font-size: 16px;
+  }
+
+  @media (max-width: 768px) {
+    html, body {
+      font-size: 14px !important;
+    }
+  }
+  
+  body {
+    @apply bg-background text-foreground min-h-screen antialiased selection:bg-brand/20 selection:text-brand transition-colors duration-200;
+    touch-action: pan-x pan-y;
+    overflow-x: hidden;
+  }
+}
+
+/* Premium Soft Cards (Reference Style) */
+.glass-card {
+  @apply bg-white dark:bg-[#181A22] border border-[#E8E7EF] dark:border-white/[0.08] shadow-[0_4px_24px_rgba(0,0,0,0.03)] dark:shadow-[0_4px_24px_rgba(0,0,0,0.25)] rounded-[24px] transition-all duration-200;
+}
+
+.glass-card:hover {
+  @apply shadow-[0_8px_30px_rgba(116,103,232,0.06)] dark:shadow-[0_8px_30px_rgba(0,0,0,0.35)];
+}
+
+.glass-header {
+  @apply bg-[#F6F6FA]/85 dark:bg-[#111218]/85 backdrop-blur-xl border-b border-[#E8E7EF] dark:border-white/[0.08] sticky top-0 z-40 transition-colors duration-200;
+}
+
+/* Reference Pastel Accents */
+.pastel-lavender {
+  @apply bg-[#E8E4FF] dark:bg-[#7467E8]/15 text-[#5848DF] dark:text-[#A59BFF];
+}
+
+.pastel-mint {
+  @apply bg-[#DDEDEA] dark:bg-emerald-500/15 text-emerald-800 dark:text-emerald-300;
+}
+
+.pastel-pink {
+  @apply bg-[#F7DDE9] dark:bg-rose-500/15 text-rose-800 dark:text-rose-300;
+}
+
+.pastel-blue {
+  @apply bg-[#DEE7F6] dark:bg-blue-500/15 text-blue-800 dark:text-blue-300;
+}
+
+.pastel-violet {
+  @apply bg-[#DCD8FF] dark:bg-indigo-500/15 text-indigo-800 dark:text-indigo-300;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(146, 146, 162, 0.25);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(146, 146, 162, 0.45);
+}
+
+/* Notification Badge */
+.notification-badge {
+  @apply absolute -top-1 -right-1 h-3.5 w-3.5 bg-rose-500 text-[9px] font-bold flex items-center justify-center text-white rounded-full animate-pulse;
+}
+
+/* Circular Progressbar Dynamic Text Fill */
+.CircularProgressbar-text {
+  fill: currentColor !important;
+}
+
+:root:not(.dark) .CircularProgressbar-text {
+  fill: #15151C !important;
+}
+
+.dark .CircularProgressbar-text {
+  fill: #F7F7FA !important;
+}
+
+/* Liquid Glass Navigation Capsule Effect */
+.liquid-glass-nav {
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(28px) saturate(190%);
+  -webkit-backdrop-filter: blur(28px) saturate(190%);
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  box-shadow: 
+    0 20px 48px rgba(116, 103, 232, 0.12),
+    0 8px 20px rgba(0, 0, 0, 0.04),
+    inset 0 1.5px 1px rgba(255, 255, 255, 0.95);
+}
+
+.dark .liquid-glass-nav {
+  background: rgba(22, 24, 34, 0.88);
+  backdrop-filter: blur(28px) saturate(190%);
+  -webkit-backdrop-filter: blur(28px) saturate(190%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 
+    0 24px 60px rgba(0, 0, 0, 0.65),
+    0 8px 24px rgba(0, 0, 0, 0.45),
+    inset 0 1px 1px rgba(255, 255, 255, 0.18);
+}
+
+.font-handwriting {
+  font-family: 'Caveat', cursive;
+}
