@@ -69,7 +69,7 @@ const SignUp = () => {
   };
 
   return (
-    <div className="min-h-[100dvh] flex-1 bg-background text-foreground flex flex-col items-center justify-center p-4 selection:bg-[#7467E8]/20 transition-colors overflow-x-hidden">
+    <div className="min-h-[100dvh] flex-1 bg-background text-foreground flex flex-col items-center justify-center p-4 selection:bg-[#7467E8]/20 transition-colors overflow-x-clip">
       <div className="w-full max-w-md mb-4">
         <Link 
           to="/" 

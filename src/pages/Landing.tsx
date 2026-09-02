@@ -34,7 +34,7 @@ const Landing: React.FC = () => {
   };
 
   return (
-    <div className="min-h-[100dvh] flex-1 bg-background text-foreground flex flex-col font-sans selection:bg-[#7467E8]/20 transition-colors overflow-x-hidden">
+    <div className="min-h-[100dvh] flex-1 bg-background text-foreground flex flex-col font-sans selection:bg-[#7467E8]/20 transition-colors overflow-x-clip">
       {/* Navigation */}
       <nav className="glass-header border-b border-[#E8E7EF] dark:border-white/10 px-6 py-4">
         <div className="container mx-auto flex items-center justify-between max-w-7xl">
