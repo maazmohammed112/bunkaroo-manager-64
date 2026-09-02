@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Bell, User, X, Download, Smartphone } from 'lucide-react';
 import { useUser } from '@/contexts/UserContext';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Sheet, SheetContent } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import Profile from '@/components/Profile';
 import Notifications from '@/components/Notifications';
@@ -172,6 +172,8 @@ const Header: React.FC<HeaderProps> = ({ onSelectTab }) => {
               side="right" 
               className="w-full sm:max-w-md p-0 border-l border-[#E8E7EF] dark:border-white/10 bg-[#F6F6FA] dark:bg-[#111218] text-foreground shadow-2xl z-[100] [&>button]:hidden focus:outline-none"
             >
+              <SheetTitle className="sr-only">Profile Settings</SheetTitle>
+              <SheetDescription className="sr-only">Manage student profile, theme, and application preferences</SheetDescription>
               <Profile onClose={() => setIsProfileOpen(false)} />
             </SheetContent>
           </Sheet>
