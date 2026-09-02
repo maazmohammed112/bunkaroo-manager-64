@@ -74,10 +74,10 @@ const Index: React.FC = () => {
   ];
 
   return (
-    <div className="min-h-screen flex flex-col bg-background text-foreground pb-28 lg:pb-10 transition-colors duration-200">
+    <div className="min-h-[100dvh] flex-1 flex flex-col bg-background text-foreground transition-colors duration-200 overflow-x-hidden">
       <Header onSelectTab={setActiveTab} />
 
-      <main className="flex-1 container mx-auto px-4 py-6 max-w-7xl pb-24 lg:pb-8">
+      <main className="flex-1 container mx-auto px-4 py-6 max-w-7xl pb-28 lg:pb-8">
         {isOffline && (
           <div className="mb-5 px-4 py-3 bg-amber-500/10 border border-amber-500/20 text-amber-800 dark:text-amber-300 rounded-[20px] flex items-center gap-2.5 text-xs font-medium shadow-sm">
             <WifiOff size={15} className="flex-shrink-0 text-amber-600 dark:text-amber-400" />

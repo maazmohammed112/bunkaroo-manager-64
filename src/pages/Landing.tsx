@@ -34,7 +34,7 @@ const Landing: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex flex-col font-sans selection:bg-[#7467E8]/20 transition-colors">
+    <div className="min-h-[100dvh] flex-1 bg-background text-foreground flex flex-col font-sans selection:bg-[#7467E8]/20 transition-colors overflow-x-hidden">
       {/* Navigation */}
       <nav className="glass-header border-b border-[#E8E7EF] dark:border-white/10 px-6 py-4">
         <div className="container mx-auto flex items-center justify-between max-w-7xl">
@@ -340,7 +340,7 @@ const Landing: React.FC = () => {
       </section>
 
       {/* Footer */}
-      <footer className="mt-auto border-t border-[#E8E7EF] dark:border-white/10 py-8 px-6 bg-white/50 dark:bg-[#181A22]/50">
+      <footer className="mt-auto border-t border-[#E8E7EF] dark:border-white/10 py-6 px-6 bg-white/50 dark:bg-[#181A22]/50 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
         <div className="container mx-auto max-w-5xl flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-[#666675] dark:text-[#9292A2] font-sans">
           <div className="flex items-center gap-2.5">
             <div className="h-7 w-7 rounded-lg bg-[#111218] p-1 flex items-center justify-center shadow-xs border border-black/10 dark:border-white/10 flex-shrink-0">

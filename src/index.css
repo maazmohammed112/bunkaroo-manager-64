@@ -79,6 +79,9 @@
     @apply scroll-smooth;
     -webkit-text-size-adjust: 100%;
     font-size: 16px;
+    overscroll-behavior-y: none;
+    overscroll-behavior: none;
+    overflow-x: hidden;
   }
 
   @media (max-width: 768px) {
@@ -88,8 +91,19 @@
   }
   
   body {
-    @apply bg-background text-foreground min-h-screen antialiased selection:bg-brand/20 selection:text-brand transition-colors duration-200;
+    @apply bg-background text-foreground antialiased selection:bg-brand/20 selection:text-brand transition-colors duration-200;
+    min-height: 100dvh;
     touch-action: pan-x pan-y;
+    overflow-x: hidden;
+    overscroll-behavior-y: none;
+    overscroll-behavior: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  #root {
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
     overflow-x: hidden;
   }
 }
