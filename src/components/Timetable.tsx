@@ -16,7 +16,10 @@ import {
   FileText,
   AlertCircle,
   SlidersHorizontal,
-  Info
+  Info,
+  Plus,
+  RotateCcw,
+  Sparkles
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -34,6 +37,20 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
 import { db } from '@/utils/storageDB';
+import {
+  ALL_WEEKDAYS,
+  WEEKDAY_SHORT,
+  formatDateKey,
+  parseDateKey,
+  getTodayDateKey,
+  addDaysToDateKey,
+  getDayNameFromKey,
+  getDayShortNameFromKey,
+  formatDisplayDate,
+  formatFullDisplayDate,
+  getMonthYearHeader,
+  generateCalendarMatrix
+} from '@/utils/dateUtils';
 
 interface Subject {
   id: string;
@@ -57,9 +74,6 @@ interface DailyAttendanceRecord {
   classLogs?: Record<string, 'attended' | 'missed'>;
 }
 
-const ALL_WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-const WEEKDAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
 const Timetable: React.FC = () => {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [activeView, setActiveView] = useState<'today' | 'calendar' | 'weekly'>('today');
@@ -69,12 +83,12 @@ const Timetable: React.FC = () => {
     return db.getSync('timetable_settings', {
       mode: 'calendar',
       weeklyHolidays: ['Saturday', 'Sunday'],
-      startDate: new Date().toISOString().split('T')[0],
-      semesterEndDate: new Date(Date.now() + 120 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+      startDate: getTodayDateKey(),
+      semesterEndDate: addDaysToDateKey(getTodayDateKey(), 120)
     });
   });
 
-  const [selectedDate, setSelectedDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState<string>(() => getTodayDateKey());
   
   // Year & Month for full month calendar grid navigation
   const [currentCalendarMonth, setCurrentCalendarMonth] = useState<Date>(() => new Date());
@@ -83,6 +97,10 @@ const Timetable: React.FC = () => {
   const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
   const [leaveReason, setLeaveReason] = useState('Sick Leave');
   const [leaveNote, setLeaveNote] = useState('');
+
+  // Extra Lecture Modal State
+  const [isExtraLectureOpen, setIsExtraLectureOpen] = useState(false);
+  const [extraSubjectId, setExtraSubjectId] = useState('');
 
   // Daily records stored in IndexedDB
   const [dailyLogs, setDailyLogs] = useState<Record<string, DailyAttendanceRecord>>(() => {
@@ -132,30 +150,47 @@ const Timetable: React.FC = () => {
     toast.success('Timetable configuration saved');
   };
 
-  const formatIndianDate = (dateStr: string) => {
-    const [year, month, day] = dateStr.split('-').map(Number);
-    const d = new Date(year, month - 1, day);
-    return d.toLocaleDateString('en-IN', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric'
-    });
-  };
-
-  const getDayName = (dateStr: string) => {
-    const [year, month, day] = dateStr.split('-').map(Number);
-    const d = new Date(year, month - 1, day);
-    return d.toLocaleDateString('en-US', { weekday: 'long' });
+  // Holiday and override resolution:
+  // 1. Explicit override in daily log takes top priority!
+  //    - status === 'regular': explicitly marked as regular/working (overrides weekly holiday!)
+  //    - status === 'holiday' | 'sick_leave': explicitly marked as off/holiday
+  // 2. Default to weekly holidays (Saturday & Sunday by default)
+  const getDateHolidayInfo = (dateStr: string) => {
+    const log = dailyLogs[dateStr];
+    if (log?.status === 'holiday' || log?.status === 'sick_leave') {
+      return {
+        isHoliday: true,
+        isOverride: true,
+        reason: log.note || (log.status === 'sick_leave' ? 'Sick Leave' : 'Holiday / Day Off'),
+        isLeave: log.status === 'sick_leave'
+      };
+    }
+    if (log?.status === 'regular') {
+      return {
+        isHoliday: false,
+        isOverride: true,
+        reason: log.note || 'Active Working Day',
+        isLeave: false
+      };
+    }
+    const dayName = getDayNameFromKey(dateStr);
+    const isWeekly = settings.weeklyHolidays.includes(dayName);
+    return {
+      isHoliday: isWeekly,
+      isOverride: false,
+      reason: isWeekly ? `${dayName} (Weekly Holiday)` : 'Regular Class Day',
+      isLeave: false
+    };
   };
 
   const isWeeklyHoliday = (dateStr: string) => {
-    const day = getDayName(dateStr);
-    return settings.weeklyHolidays.includes(day);
+    return getDateHolidayInfo(dateStr).isHoliday;
   };
 
   // 1-Tap Mark All Present Today with Functional Undo
   const markAllPresentToday = () => {
-    const todayName = new Date().toLocaleDateString('en-US', { weekday: 'long' });
+    const todayStr = getTodayDateKey();
+    const todayName = getDayNameFromKey(todayStr);
     const todaySubjects = subjects.filter((s) => s.days?.includes(todayName));
 
     if (todaySubjects.length === 0) {
@@ -181,14 +216,14 @@ const Timetable: React.FC = () => {
     db.set('subjects', updated);
 
     // Save into daily log
-    const todayStr = new Date().toISOString().split('T')[0];
     const newDailyLogs = { ...dailyLogs };
     const classLogs = { ...(newDailyLogs[todayStr]?.classLogs || {}) };
     todaySubjects.forEach((s) => {
       classLogs[s.id] = 'attended';
     });
     newDailyLogs[todayStr] = {
-      status: 'regular',
+      ...(newDailyLogs[todayStr] || {}),
+      status: newDailyLogs[todayStr]?.status || 'regular',
       classLogs
     };
     setDailyLogs(newDailyLogs);
@@ -210,6 +245,7 @@ const Timetable: React.FC = () => {
   };
 
   const markAttendance = (subjectId: string, attended: boolean, targetDate?: string) => {
+    const dateKey = targetDate || selectedDate || getTodayDateKey();
     const updated = subjects.map((subj) => {
       if (subj.id === subjectId) {
         return {
@@ -224,19 +260,17 @@ const Timetable: React.FC = () => {
     setSubjects(updated);
     db.set('subjects', updated);
 
-    // Record in daily log if date is provided
-    if (targetDate) {
-      const newDailyLogs = { ...dailyLogs };
-      const currentRecord = newDailyLogs[targetDate] || { status: 'regular', classLogs: {} };
-      const classLogs = { ...(currentRecord.classLogs || {}) };
-      classLogs[subjectId] = attended ? 'attended' : 'missed';
-      newDailyLogs[targetDate] = {
-        ...currentRecord,
-        classLogs
-      };
-      setDailyLogs(newDailyLogs);
-      db.set('attendance_daily_logs', newDailyLogs);
-    }
+    // Record in daily log
+    const newDailyLogs = { ...dailyLogs };
+    const currentRecord = newDailyLogs[dateKey] || { status: 'regular', classLogs: {} };
+    const classLogs = { ...(currentRecord.classLogs || {}) };
+    classLogs[subjectId] = attended ? 'attended' : 'missed';
+    newDailyLogs[dateKey] = {
+      ...currentRecord,
+      classLogs
+    };
+    setDailyLogs(newDailyLogs);
+    db.set('attendance_daily_logs', newDailyLogs);
 
     toast.success(attended ? 'Class marked as Attended' : 'Class marked as Missed');
   };
@@ -244,6 +278,7 @@ const Timetable: React.FC = () => {
   const markDayAsLeave = () => {
     const newDailyLogs = { ...dailyLogs };
     newDailyLogs[selectedDate] = {
+      ...(newDailyLogs[selectedDate] || {}),
       status: leaveReason === 'Sick Leave' ? 'sick_leave' : 'holiday',
       note: leaveNote.trim() || leaveReason
     };
@@ -251,24 +286,52 @@ const Timetable: React.FC = () => {
     db.set('attendance_daily_logs', newDailyLogs);
     setIsLeaveModalOpen(false);
     setLeaveNote('');
-    toast.success(`Marked ${formatIndianDate(selectedDate)} as ${leaveReason}`);
+    toast.success(`Marked ${formatDisplayDate(selectedDate)} as ${leaveReason}`);
   };
 
+  // Remove holiday status: for weekly holidays (Saturday/Sunday), mark as working day override.
+  // For custom holiday dates, set status to regular.
   const removeDayLeave = (dateStr: string) => {
     const newDailyLogs = { ...dailyLogs };
-    delete newDailyLogs[dateStr];
+    const dayName = getDayNameFromKey(dateStr);
+    const isWeekly = settings.weeklyHolidays.includes(dayName);
+
+    newDailyLogs[dateStr] = {
+      ...(newDailyLogs[dateStr] || {}),
+      status: 'regular',
+      note: isWeekly ? 'Active Working Day' : undefined
+    };
+
     setDailyLogs(newDailyLogs);
     db.set('attendance_daily_logs', newDailyLogs);
-    toast.info('Holiday status removed. Regular classes active.');
+    toast.success(`Holiday removed! ${dayName} (${formatDisplayDate(dateStr)}) is now an active class day.`);
+  };
+
+  // Reset a date to follow standard weekly defaults
+  const resetDateToDefault = (dateStr: string) => {
+    const newDailyLogs = { ...dailyLogs };
+    if (newDailyLogs[dateStr]) {
+      // If there are attendance logs, keep classLogs but reset status
+      if (newDailyLogs[dateStr].classLogs && Object.keys(newDailyLogs[dateStr].classLogs!).length > 0) {
+        delete newDailyLogs[dateStr].note;
+        const dayName = getDayNameFromKey(dateStr);
+        newDailyLogs[dateStr].status = settings.weeklyHolidays.includes(dayName) ? 'holiday' : 'regular';
+      } else {
+        delete newDailyLogs[dateStr];
+      }
+    }
+    setDailyLogs(newDailyLogs);
+    db.set('attendance_daily_logs', newDailyLogs);
+    toast.info(`Reset ${formatDisplayDate(dateStr)} to default weekly schedule.`);
   };
 
   const changeDateBy = (offset: number) => {
-    const [year, month, day] = selectedDate.split('-').map(Number);
-    const current = new Date(year, month - 1, day);
-    current.setDate(current.getDate() + offset);
-    const newDateStr = current.toISOString().split('T')[0];
+    const newDateStr = addDaysToDateKey(selectedDate, offset);
     setSelectedDate(newDateStr);
-    setCurrentCalendarMonth(new Date(current.getFullYear(), current.getMonth(), 1));
+    const d = parseDateKey(newDateStr);
+    if (d.getMonth() !== currentCalendarMonth.getMonth() || d.getFullYear() !== currentCalendarMonth.getFullYear()) {
+      setCurrentCalendarMonth(new Date(d.getFullYear(), d.getMonth(), 1));
+    }
   };
 
   const changeMonthBy = (offset: number) => {
@@ -279,10 +342,29 @@ const Timetable: React.FC = () => {
   };
 
   const jumpToToday = () => {
-    const today = new Date();
-    const todayStr = today.toISOString().split('T')[0];
+    const todayStr = getTodayDateKey();
     setSelectedDate(todayStr);
+    const today = parseDateKey(todayStr);
     setCurrentCalendarMonth(new Date(today.getFullYear(), today.getMonth(), 1));
+  };
+
+  const handleCellClick = (cellDateStr: string) => {
+    setSelectedDate(cellDateStr);
+    const cellDate = parseDateKey(cellDateStr);
+    if (cellDate.getMonth() !== currentCalendarMonth.getMonth() || cellDate.getFullYear() !== currentCalendarMonth.getFullYear()) {
+      setCurrentCalendarMonth(new Date(cellDate.getFullYear(), cellDate.getMonth(), 1));
+    }
+  };
+
+  // Extra Lecture Logging (e.g. Sunday make-up or lab session)
+  const handleLogExtraLecture = (attended: boolean) => {
+    if (!extraSubjectId) {
+      toast.error('Please select a subject');
+      return;
+    }
+    markAttendance(extraSubjectId, attended, selectedDate);
+    setIsExtraLectureOpen(false);
+    setExtraSubjectId('');
   };
 
   const getAttendanceStatus = (attended: number, total: number, required = 75) => {
@@ -352,114 +434,36 @@ const Timetable: React.FC = () => {
     toast.success('Subject schedule updated');
   };
 
-  // Build month calendar days matrix
-  const currentYear = currentCalendarMonth.getFullYear();
-  const currentMonthIdx = currentCalendarMonth.getMonth();
-  const monthName = currentCalendarMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  // Build month calendar days matrix using timezone-safe generator
+  const monthName = getMonthYearHeader(currentCalendarMonth);
+  const matrixCells = generateCalendarMatrix(currentCalendarMonth);
 
-  const firstDayOfMonth = new Date(currentYear, currentMonthIdx, 1);
-  // Mon = 0, Tue = 1, ... Sun = 6
-  const startDayOffset = (firstDayOfMonth.getDay() + 6) % 7;
-  const daysInMonth = new Date(currentYear, currentMonthIdx + 1, 0).getDate();
-  const daysInPrevMonth = new Date(currentYear, currentMonthIdx, 0).getDate();
+  const calendarCells = matrixCells.map((cell) => {
+    const holidayInfo = getDateHolidayInfo(cell.dateStr);
+    const classes = subjects.filter(s => s.days?.includes(cell.dayOfWeekName));
+    const logs = dailyLogs[cell.dateStr]?.classLogs;
 
-  // Generate calendar cells
-  interface CalendarCell {
-    dateStr: string;
-    dayNum: number;
-    isCurrentMonth: boolean;
-    isToday: boolean;
-    isSelected: boolean;
-    isHoliday: boolean;
-    holidayLabel?: string;
-    classCount: number;
-    hasLogs: boolean;
-    allAttended: boolean;
-    anyMissed: boolean;
-  }
-
-  const calendarCells: CalendarCell[] = [];
-  const todayStr = new Date().toISOString().split('T')[0];
-
-  // 1. Previous month padding cells
-  for (let i = startDayOffset - 1; i >= 0; i--) {
-    const dayNum = daysInPrevMonth - i;
-    const prevMonthDate = new Date(currentYear, currentMonthIdx - 1, dayNum);
-    const dateStr = prevMonthDate.toISOString().split('T')[0];
-    const dayName = getDayName(dateStr);
-    const isHoliday = isWeeklyHoliday(dateStr) || dailyLogs[dateStr]?.status === 'holiday' || dailyLogs[dateStr]?.status === 'sick_leave';
-    const classes = subjects.filter(s => s.days?.includes(dayName));
-    const logs = dailyLogs[dateStr]?.classLogs;
-
-    calendarCells.push({
-      dateStr,
-      dayNum,
-      isCurrentMonth: false,
-      isToday: dateStr === todayStr,
-      isSelected: dateStr === selectedDate,
-      isHoliday,
-      holidayLabel: dailyLogs[dateStr]?.note,
+    return {
+      dateStr: cell.dateStr,
+      dayNum: cell.dayNum,
+      isCurrentMonth: cell.isCurrentMonth,
+      isToday: cell.isToday,
+      isSelected: cell.dateStr === selectedDate,
+      isHoliday: holidayInfo.isHoliday,
+      holidayLabel: holidayInfo.reason,
       classCount: classes.length,
       hasLogs: !!logs && Object.keys(logs).length > 0,
       allAttended: !!logs && classes.length > 0 && classes.every(c => logs[c.id] === 'attended'),
       anyMissed: !!logs && Object.values(logs).includes('missed')
-    });
-  }
+    };
+  });
 
-  // 2. Current month cells
-  for (let day = 1; day <= daysInMonth; day++) {
-    const d = new Date(currentYear, currentMonthIdx, day);
-    // Format YYYY-MM-DD
-    const dateStr = `${currentYear}-${String(currentMonthIdx + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    const dayName = getDayName(dateStr);
-    const isHoliday = isWeeklyHoliday(dateStr) || dailyLogs[dateStr]?.status === 'holiday' || dailyLogs[dateStr]?.status === 'sick_leave';
-    const classes = subjects.filter(s => s.days?.includes(dayName));
-    const logs = dailyLogs[dateStr]?.classLogs;
-
-    calendarCells.push({
-      dateStr,
-      dayNum: day,
-      isCurrentMonth: true,
-      isToday: dateStr === todayStr,
-      isSelected: dateStr === selectedDate,
-      isHoliday,
-      holidayLabel: dailyLogs[dateStr]?.note,
-      classCount: classes.length,
-      hasLogs: !!logs && Object.keys(logs).length > 0,
-      allAttended: !!logs && classes.length > 0 && classes.every(c => logs[c.id] === 'attended'),
-      anyMissed: !!logs && Object.values(logs).includes('missed')
-    });
-  }
-
-  // 3. Trailing next month cells to complete 7-day grid
-  const remainingCells = (7 - (calendarCells.length % 7)) % 7;
-  for (let i = 1; i <= remainingCells; i++) {
-    const nextMonthDate = new Date(currentYear, currentMonthIdx + 1, i);
-    const dateStr = nextMonthDate.toISOString().split('T')[0];
-    const dayName = getDayName(dateStr);
-    const isHoliday = isWeeklyHoliday(dateStr) || dailyLogs[dateStr]?.status === 'holiday' || dailyLogs[dateStr]?.status === 'sick_leave';
-    const classes = subjects.filter(s => s.days?.includes(dayName));
-    const logs = dailyLogs[dateStr]?.classLogs;
-
-    calendarCells.push({
-      dateStr,
-      dayNum: i,
-      isCurrentMonth: false,
-      isToday: dateStr === todayStr,
-      isSelected: dateStr === selectedDate,
-      isHoliday,
-      holidayLabel: dailyLogs[dateStr]?.note,
-      classCount: classes.length,
-      hasLogs: !!logs && Object.keys(logs).length > 0,
-      allAttended: !!logs && classes.length > 0 && classes.every(c => logs[c.id] === 'attended'),
-      anyMissed: !!logs && Object.values(logs).includes('missed')
-    });
-  }
-
-  const todayDayName = new Date().toLocaleDateString('en-US', { weekday: 'long' });
-  const selectedDayName = getDayName(selectedDate);
+  const todayKey = getTodayDateKey();
+  const todayDayName = getDayNameFromKey(todayKey);
+  const selectedDayName = getDayNameFromKey(selectedDate);
+  const selectedDateHolidayInfo = getDateHolidayInfo(selectedDate);
+  const isSelectedDateHoliday = selectedDateHolidayInfo.isHoliday;
   const selectedDateLog = dailyLogs[selectedDate];
-  const isSelectedDateHoliday = isWeeklyHoliday(selectedDate) || selectedDateLog?.status === 'holiday' || selectedDateLog?.status === 'sick_leave';
   const selectedDaySubjects = subjects.filter((s) => s.days?.includes(selectedDayName));
   const todaySubjects = subjects.filter((s) => s.days?.includes(todayDayName));
 
@@ -559,7 +563,7 @@ const Timetable: React.FC = () => {
             <div className="flex items-center gap-2">
               <span className="h-2.5 w-2.5 rounded-full bg-[#7467E8]"></span>
               <h3 className="text-base font-bold font-display text-foreground">
-                Today — {todayDayName}, {formatIndianDate(new Date().toISOString().split('T')[0])}
+                Today — {todayDayName}, {formatDisplayDate(todayKey)}
               </h3>
             </div>
             <span className="text-xs font-semibold text-[#666675] dark:text-[#9292A2] bg-[#F1F0F8] dark:bg-[#20222C] px-3 py-1 rounded-full">
@@ -624,7 +628,7 @@ const Timetable: React.FC = () => {
                     <div className="flex gap-2.5 pt-1">
                       <button
                         type="button"
-                        onClick={() => markAttendance(subj.id, true, new Date().toISOString().split('T')[0])}
+                        onClick={() => markAttendance(subj.id, true, todayKey)}
                         className="flex-1 py-2.5 px-3 bg-[#DDEDEA] hover:bg-[#cde4e0] dark:bg-emerald-500/15 dark:hover:bg-emerald-500/25 text-emerald-900 dark:text-emerald-300 border border-emerald-500/20 text-xs font-bold rounded-[14px] flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] cursor-pointer shadow-xs"
                       >
                         <Check size={15} strokeWidth={2.5} />
@@ -632,7 +636,7 @@ const Timetable: React.FC = () => {
                       </button>
                       <button
                         type="button"
-                        onClick={() => markAttendance(subj.id, false, new Date().toISOString().split('T')[0])}
+                        onClick={() => markAttendance(subj.id, false, todayKey)}
                         className="flex-1 py-2.5 px-3 bg-[#F7DDE9] hover:bg-[#f3cbdc] dark:bg-rose-500/15 dark:hover:bg-rose-500/25 text-rose-900 dark:text-rose-300 border border-rose-500/20 text-xs font-bold rounded-[14px] flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] cursor-pointer shadow-xs"
                       >
                         <X size={15} strokeWidth={2.5} />
@@ -727,7 +731,7 @@ const Timetable: React.FC = () => {
                 return (
                   <div
                     key={cell.dateStr}
-                    onClick={() => setSelectedDate(cell.dateStr)}
+                    onClick={() => handleCellClick(cell.dateStr)}
                     className={`min-h-[58px] sm:min-h-[70px] p-1.5 sm:p-2 rounded-[16px] sm:rounded-[18px] border transition-all cursor-pointer flex flex-col justify-between text-left group active:scale-95 ${
                       isSelected
                         ? 'bg-[#7467E8] text-white border-[#7467E8] shadow-md shadow-[#7467E8]/30 scale-[1.02] z-10'
@@ -754,7 +758,7 @@ const Timetable: React.FC = () => {
 
                       {cell.isHoliday && (
                         <span 
-                          className={`text-[10px] ${isSelected ? 'text-white' : 'text-amber-600 dark:text-amber-400'}`}
+                          className={`text-[10px] ${isSelected ? 'text-white' : 'text-amber-500 dark:text-amber-400'}`}
                           title={cell.holidayLabel || 'Holiday / Day Off'}
                         >
                           <Coffee size={12} strokeWidth={2} />
@@ -764,17 +768,13 @@ const Timetable: React.FC = () => {
 
                     {/* Bottom Row: Scheduled Class Indicator / Status */}
                     <div className="pt-1 flex items-center justify-between">
-                      {cell.isHoliday ? (
-                        <span className={`text-[9px] font-semibold truncate ${
-                          isSelected ? 'text-white/90' : 'text-[#9292A2] dark:text-[#888B98]'
-                        }`}>
-                          Off
-                        </span>
-                      ) : cell.classCount > 0 ? (
+                      {cell.classCount > 0 ? (
                         <div className="flex items-center gap-1 w-full justify-between">
                           <span className={`text-[9px] sm:text-[10px] font-bold px-1.5 py-0.2 rounded-full ${
                             isSelected
                               ? 'bg-white/20 text-white'
+                              : cell.isHoliday
+                              ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300'
                               : 'bg-[#F1F0F8] dark:bg-[#252836] text-[#7467E8] dark:text-[#A59BFF]'
                           }`}>
                             {cell.classCount} {cell.classCount === 1 ? 'class' : 'classes'}
@@ -794,6 +794,12 @@ const Timetable: React.FC = () => {
                             />
                           )}
                         </div>
+                      ) : cell.isHoliday ? (
+                        <span className={`text-[9px] font-semibold truncate ${
+                          isSelected ? 'text-white/90' : 'text-[#9292A2] dark:text-[#888B98]'
+                        }`}>
+                          Off
+                        </span>
                       ) : (
                         <span className="text-[9px] opacity-0 group-hover:opacity-60 text-muted-foreground">-</span>
                       )}
@@ -820,17 +826,22 @@ const Timetable: React.FC = () => {
                 <div>
                   <div className="flex items-center gap-2">
                     <h4 className="text-base sm:text-lg font-bold font-display text-foreground">
-                      {selectedDayName}, {formatIndianDate(selectedDate)}
+                      {selectedDayName}, {formatDisplayDate(selectedDate)}
                     </h4>
-                    {selectedDate === todayStr && (
+                    {selectedDate === todayKey && (
                       <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#7467E8] text-white">
                         Today
+                      </span>
+                    )}
+                    {selectedDateHolidayInfo.isOverride && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#F1F0F8] dark:bg-[#20222C] text-[#7467E8] dark:text-[#A59BFF] border border-[#7467E8]/30">
+                        Custom Schedule
                       </span>
                     )}
                   </div>
                   <p className="text-xs text-[#666675] dark:text-[#9292A2] font-medium mt-0.5">
                     {isSelectedDateHoliday 
-                      ? 'Non-Instructional / Holiday (Classes paused)' 
+                      ? selectedDateHolidayInfo.reason 
                       : `${selectedDaySubjects.length} ${selectedDaySubjects.length === 1 ? 'class' : 'classes'} scheduled for this day`}
                   </p>
                 </div>
@@ -845,14 +856,15 @@ const Timetable: React.FC = () => {
                 </button>
               </div>
 
-              {/* Day Off / Leave Action */}
-              <div className="flex items-center gap-2">
+              {/* Day Off / Working Actions */}
+              <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
                 {isSelectedDateHoliday ? (
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={() => removeDayLeave(selectedDate)}
-                    className="rounded-full text-xs font-semibold text-rose-600 dark:text-rose-400 border-rose-500/30 hover:bg-rose-500/10 cursor-pointer h-9 px-4"
+                    className="rounded-full text-xs font-semibold text-rose-600 dark:text-rose-400 border-rose-500/30 hover:bg-rose-500/10 cursor-pointer h-9 px-3.5"
+                    title="Clear holiday and mark this as an active class day"
                   >
                     Clear Holiday Status
                   </Button>
@@ -861,24 +873,88 @@ const Timetable: React.FC = () => {
                     variant="outline"
                     size="sm"
                     onClick={() => setIsLeaveModalOpen(true)}
-                    className="rounded-full text-xs font-semibold gap-1.5 cursor-pointer h-9 px-4"
+                    className="rounded-full text-xs font-semibold gap-1.5 cursor-pointer h-9 px-3.5"
+                    title="Mark this date as an off day, sick leave, or fest"
                   >
                     <Coffee size={14} />
                     Mark Day Off / Leave
                   </Button>
                 )}
+
+                {/* Reset override button */}
+                {selectedDateHolidayInfo.isOverride && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => resetDateToDefault(selectedDate)}
+                    className="rounded-full text-xs text-[#666675] dark:text-[#9292A2] hover:text-foreground h-9 px-2.5 gap-1 cursor-pointer"
+                    title="Reset this date to weekly timetable default"
+                  >
+                    <RotateCcw size={12} />
+                    <span className="hidden sm:inline">Reset</span>
+                  </Button>
+                )}
+
+                {/* Log Extra Lecture */}
+                {subjects.length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setExtraSubjectId(subjects[0]?.id || '');
+                      setIsExtraLectureOpen(true);
+                    }}
+                    className="rounded-full text-xs font-semibold text-[#7467E8] dark:text-[#A59BFF] border-[#7467E8]/30 hover:bg-[#7467E8]/10 cursor-pointer h-9 px-3 gap-1"
+                    title="Log an extra or make-up lecture for this date"
+                  >
+                    <Plus size={13} />
+                    <span>Extra Lecture</span>
+                  </Button>
+                )}
               </div>
             </div>
 
-            {/* If Selected Day is a Holiday */}
-            {isSelectedDateHoliday ? (
+            {/* Holiday Notice if Scheduled Classes Exist on a Holiday */}
+            {isSelectedDateHoliday && selectedDaySubjects.length > 0 && (
+              <div className="p-3.5 sm:p-4 rounded-[20px] bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/25 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-2xl bg-amber-500/20 text-amber-700 dark:text-amber-300 flex items-center justify-center flex-shrink-0">
+                    <Coffee size={18} strokeWidth={2.2} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h5 className="font-bold text-sm text-foreground font-display">
+                        {selectedDateHolidayInfo.reason}
+                      </h5>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-800 dark:text-amber-300">
+                        {selectedDaySubjects.length} {selectedDaySubjects.length === 1 ? 'class' : 'classes'} scheduled
+                      </span>
+                    </div>
+                    <p className="text-xs text-[#666675] dark:text-[#9292A2] mt-0.5">
+                      This day is marked as off, but has scheduled classes. You can log attendance below or click "Make Working Day" to activate the schedule.
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => removeDayLeave(selectedDate)}
+                  className="rounded-full text-xs font-bold text-[#7467E8] dark:text-[#A59BFF] border-[#7467E8]/30 hover:bg-[#7467E8]/10 cursor-pointer h-8 px-3 whitespace-nowrap"
+                >
+                  Make Working Day
+                </Button>
+              </div>
+            )}
+
+            {/* If Selected Day is a Holiday with NO scheduled classes */}
+            {isSelectedDateHoliday && selectedDaySubjects.length === 0 ? (
               <div className="p-8 rounded-[24px] text-center space-y-3 bg-[#DDEDEA]/30 dark:bg-emerald-500/10 border border-emerald-500/20 max-w-lg mx-auto">
                 <div className="h-12 w-12 rounded-full bg-[#DDEDEA] dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 flex items-center justify-center mx-auto">
                   <Coffee size={22} strokeWidth={2} />
                 </div>
                 <div className="space-y-1">
                   <h4 className="font-bold text-base text-foreground font-display">
-                    {selectedDateLog?.note || (isWeeklyHoliday(selectedDate) ? 'Weekly Holiday' : 'Day Off')}
+                    {selectedDateHolidayInfo.reason}
                   </h4>
                   <p className="text-xs text-[#666675] dark:text-[#9292A2]">
                     Attendance tracking is paused for this date. No missed lectures will count against your criteria.
@@ -886,10 +962,24 @@ const Timetable: React.FC = () => {
                 </div>
               </div>
             ) : selectedDaySubjects.length === 0 ? (
-              <div className="p-8 rounded-[24px] bg-white/50 dark:bg-[#181A22]/50 border border-dashed border-[#E8E7EF] dark:border-white/10 text-center max-w-md mx-auto">
+              <div className="p-8 rounded-[24px] bg-white/50 dark:bg-[#181A22]/50 border border-dashed border-[#E8E7EF] dark:border-white/10 text-center max-w-md mx-auto space-y-2">
                 <p className="text-xs text-[#9292A2] dark:text-[#888B98] italic">
                   No classes scheduled for {selectedDayName}
                 </p>
+                {subjects.length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setExtraSubjectId(subjects[0]?.id || '');
+                      setIsExtraLectureOpen(true);
+                    }}
+                    className="rounded-full text-xs font-semibold gap-1.5 cursor-pointer mt-1"
+                  >
+                    <Plus size={13} />
+                    Log Extra Lecture for this Date
+                  </Button>
+                )}
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
@@ -977,7 +1067,9 @@ const Timetable: React.FC = () => {
                     {day}
                   </h3>
                   <span className="text-[11px] font-semibold text-[#666675] dark:text-[#9292A2] bg-[#F1F0F8] dark:bg-[#20222C] px-2.5 py-0.5 rounded-full">
-                    {isHoliday ? 'Weekly Holiday' : `${daySubjects.length} ${daySubjects.length === 1 ? 'class' : 'classes'}`}
+                    {isHoliday 
+                      ? (daySubjects.length > 0 ? `Weekly Holiday • ${daySubjects.length} ${daySubjects.length === 1 ? 'class' : 'classes'}` : 'Weekly Holiday')
+                      : `${daySubjects.length} ${daySubjects.length === 1 ? 'class' : 'classes'}`}
                   </span>
                 </div>
 
@@ -1056,7 +1148,7 @@ const Timetable: React.FC = () => {
               Mark Day Off / Leave
             </DialogTitle>
             <DialogDescription className="text-xs text-[#666675] dark:text-[#9292A2]">
-              Mark {formatIndianDate(selectedDate)} as a non-instructional day so classes aren't counted against your attendance.
+              Mark {formatFullDisplayDate(selectedDate)} as a non-instructional day so classes aren't counted against your attendance.
             </DialogDescription>
           </DialogHeader>
 
@@ -1242,8 +1334,8 @@ const Timetable: React.FC = () => {
               <Label className="text-xs font-semibold text-[#666675] dark:text-[#9292A2] mb-2 block">
                 Schedule Days
               </Label>
-              <div className="grid grid-cols-3 gap-2">
-                {ALL_WEEKDAYS.slice(0, 6).map((day) => {
+              <div className="grid grid-cols-4 gap-1.5">
+                {ALL_WEEKDAYS.map((day) => {
                   const isSelected = editedDays.includes(day);
                   return (
                     <button
@@ -1253,7 +1345,7 @@ const Timetable: React.FC = () => {
                       className={`p-2 rounded-xl text-xs font-bold transition-all border text-center ${
                         isSelected 
                           ? 'bg-[#7467E8] text-white border-[#7467E8]' 
-                          : 'bg-[#F6F6FA] dark:bg-[#15161F] text-foreground border-[#E8E7EF] dark:border-white/10'
+                          : 'bg-[#F6F6FA] dark:bg-[#15161F] text-foreground border-[#E8E7EF] dark:border-white/10 hover:border-[#7467E8]/40'
                       }`}
                     >
                       {day.slice(0, 3)}
@@ -1314,6 +1406,58 @@ const Timetable: React.FC = () => {
               </Button>
               <Button size="sm" onClick={handleSaveEdit} className="rounded-full text-xs font-bold bg-[#7467E8] text-white">
                 Save
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* MODAL 4: Log Extra Lecture / Make-up Session */}
+      <Dialog open={isExtraLectureOpen} onOpenChange={setIsExtraLectureOpen}>
+        <DialogContent className="max-w-md rounded-[28px]">
+          <DialogHeader>
+            <DialogTitle className="font-display text-lg font-bold text-foreground flex items-center gap-2">
+              <Plus size={18} className="text-[#7467E8]" />
+              Log Extra Lecture
+            </DialogTitle>
+            <DialogDescription className="text-xs text-[#666675] dark:text-[#9292A2]">
+              Record attendance for an extra or make-up lecture on {formatFullDisplayDate(selectedDate)}.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-[#666675] dark:text-[#9292A2]">Select Subject</Label>
+              <select
+                value={extraSubjectId}
+                onChange={(e) => setExtraSubjectId(e.target.value)}
+                className="w-full h-11 px-3.5 rounded-xl border border-[#E8E7EF] dark:border-white/10 bg-white dark:bg-[#15161F] text-foreground text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[#7467E8]"
+              >
+                {subjects.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} ({s.attendedClasses}/{s.totalClasses} attended)
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0 pt-2">
+            <Button variant="outline" onClick={() => setIsExtraLectureOpen(false)} className="rounded-full text-xs">
+              Cancel
+            </Button>
+            <div className="flex items-center gap-2">
+              <Button 
+                onClick={() => handleLogExtraLecture(false)} 
+                className="rounded-full text-xs font-bold bg-[#F7DDE9] hover:bg-[#f3cbdc] text-rose-900 border border-rose-500/20 shadow-xs"
+              >
+                <X size={14} className="mr-1" /> Mark Missed
+              </Button>
+              <Button 
+                onClick={() => handleLogExtraLecture(true)} 
+                className="rounded-full text-xs font-bold bg-[#7467E8] hover:bg-[#6658DF] text-white shadow-xs"
+              >
+                <Check size={14} className="mr-1" /> Mark Attended
               </Button>
             </div>
           </DialogFooter>

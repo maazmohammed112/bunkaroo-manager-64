@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { db } from '@/utils/storageDB';
 import { toast } from 'sonner';
+import { getTodayDateKey, addDaysToDateKey } from '@/utils/dateUtils';
 
 export interface TourStep {
   target: string; // matches data-tour attribute
@@ -144,8 +145,8 @@ export const OnboardingTour: React.FC = () => {
     const existing = db.getSync('timetable_settings', {
       mode: 'calendar',
       weeklyHolidays: ['Saturday', 'Sunday'],
-      startDate: new Date().toISOString().split('T')[0],
-      semesterEndDate: new Date(Date.now() + 120 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+      startDate: getTodayDateKey(),
+      semesterEndDate: addDaysToDateKey(getTodayDateKey(), 120)
     });
     const updated = { ...existing, mode };
     db.set('timetable_settings', updated);

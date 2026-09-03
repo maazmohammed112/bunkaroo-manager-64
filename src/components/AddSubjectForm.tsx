@@ -20,6 +20,7 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
 import { db } from '@/utils/storageDB';
+import { getTodayDateKey, addDaysToDateKey } from '@/utils/dateUtils';
 
 interface Subject {
   id: string;
@@ -81,8 +82,8 @@ const AddSubjectForm: React.FC = () => {
     const existing = db.getSync<TimetableSettings>('timetable_settings', {
       mode: 'calendar',
       weeklyHolidays: ['Saturday', 'Sunday'],
-      startDate: new Date().toISOString().split('T')[0],
-      semesterEndDate: new Date(Date.now() + 120 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+      startDate: getTodayDateKey(),
+      semesterEndDate: addDaysToDateKey(getTodayDateKey(), 120)
     });
 
     const updated: TimetableSettings = { ...existing, mode };
