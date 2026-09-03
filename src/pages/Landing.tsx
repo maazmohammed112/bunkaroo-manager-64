@@ -20,6 +20,7 @@ import {
   Layers
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { AppPreviewSection } from '@/components/landing/AppPreviewSection';
 
 const Landing: React.FC = () => {
   const navigate = useNavigate();
@@ -154,6 +155,9 @@ const Landing: React.FC = () => {
           </motion.div>
         </div>
       </section>
+
+      {/* App Preview & PWA Experience Section (Inspired by Native Mobile Reference) */}
+      <AppPreviewSection />
 
       {/* Feature Highlights Grid */}
       <section className="py-20 px-6 bg-[#F1F0F8]/40 dark:bg-[#15161F]/40 border-t border-[#E8E7EF] dark:border-white/[0.08]">
