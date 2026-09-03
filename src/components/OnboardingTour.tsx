@@ -1,42 +1,66 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { 
+  CalendarDays, 
+  PlusCircle, 
+  PieChart, 
+  Timer, 
+  StickyNote, 
+  DownloadCloud, 
+  UploadCloud, 
+  Check, 
+  SlidersHorizontal,
+  Info,
+  ChevronRight,
+  ShieldCheck,
+  Smartphone
+} from 'lucide-react';
+import { db } from '@/utils/storageDB';
+import { toast } from 'sonner';
 
 export interface TourStep {
   target: string; // matches data-tour attribute
   title: string;
   description: string;
+  tip?: string;
 }
 
 const TOUR_STEPS: TourStep[] = [
   {
-    target: 'pwa-install',
-    title: 'Install as Mobile & Desktop App',
-    description: "Install BunkBuddy to your phone or laptop! Tap your browser menu (⋮ on Android/Chrome or Share on Safari) and choose 'Add to Home Screen' or 'Install App' for instant offline access."
-  },
-  {
     target: 'timetable',
-    title: 'Weekly Schedule & Attendance',
-    description: 'Your weekly game plan lives here. See classes, track attendance, and know what’s coming up.'
+    title: 'Timetable & Full Month Calendar',
+    description: 'Track daily attendance with interactive full month calendar grids, date-by-date logging, and college holiday support.',
+    tip: 'Switch between Today, Full Month Calendar, and Weekly Overview anytime.'
   },
   {
     target: 'add',
-    title: 'Add New Subject',
-    description: 'Need to add a subject? This is where the semester starts getting organised.'
+    title: 'Select Mode & Add Subjects',
+    description: 'Confirm your tracking mode (Calendar Date Mode or Classic Mode) to unlock subject creation and configure weekly lecture schedules.',
+    tip: 'Subject creation activates once your preferred tracking mode is chosen.'
   },
   {
     target: 'statistics',
-    title: 'Bunk Math & Cross-Device Backup',
-    description: 'Bunk Math calculates safe bunk limits and recovery classes. Plus, use Export & Import here to transfer your data across your phone, tablet, and laptop anytime.'
+    title: 'Cross-Device Backup & Bunk Math',
+    description: 'Calculate safe bunks, margin to threshold, and recovery requirements. Use Export & Import to transfer all your subjects and attendance between your phone, tablet, and laptop.',
+    tip: 'Backups are stored in a safe JSON file with zero cloud lock-in.'
   },
   {
     target: 'pomodoro',
-    title: 'Pomodoro Focus Timer',
-    description: 'Lock in. Start a focus session and get some actual studying done.'
+    title: 'Pomodoro Study Timer',
+    description: 'Run focused study blocks with custom timers, ambient sounds, and structured break intervals.',
+    tip: 'Stay disciplined during exam preparations and project sprints.'
   },
   {
     target: 'notes',
     title: 'Academic Notes Vault',
-    description: 'Notes stay here when your brain decides not to.'
+    description: 'Keep quick lecture notes, syllabus checklists, and important class announcements locally on your device.',
+    tip: 'All notes are saved offline and included in your cross-device backups.'
+  },
+  {
+    target: 'pwa-install',
+    title: 'Install as Native App',
+    description: 'Install BunkBuddy directly to your phone or desktop. Tap your browser menu and choose Add to Home Screen or Install App.',
+    tip: 'Runs completely offline with zero latency.'
   }
 ];
 
@@ -46,14 +70,16 @@ export const OnboardingTour: React.FC = () => {
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
 
+  // Mode selection state inside Welcome card
+  const [chosenMode, setChosenMode] = useState<'calendar' | 'classic'>('calendar');
+
   // Check if first-time user
   useEffect(() => {
     const hasSeenTour = localStorage.getItem('bunkbuddy_tutorial_seen');
     if (!hasSeenTour) {
-      // Short delay so interface renders cleanly before welcome card pops
       const timer = setTimeout(() => {
         setShowWelcome(true);
-      }, 700);
+      }, 600);
       return () => clearTimeout(timer);
     }
   }, []);
@@ -77,8 +103,6 @@ export const OnboardingTour: React.FC = () => {
     const step = TOUR_STEPS[currentStepIndex];
     if (!step) return;
 
-    // Search for element with matching data-tour
-    // Check visible elements (desktop tab or mobile button)
     const elements = Array.from(document.querySelectorAll<HTMLElement>(`[data-tour="${step.target}"]`));
     const visibleElement = elements.find((el) => {
       const rect = el.getBoundingClientRect();
@@ -86,7 +110,6 @@ export const OnboardingTour: React.FC = () => {
     }) || elements[0];
 
     if (visibleElement) {
-      // Scroll into view if off-screen
       const rect = visibleElement.getBoundingClientRect();
       const inView =
         rect.top >= 0 &&
@@ -117,13 +140,29 @@ export const OnboardingTour: React.FC = () => {
     };
   }, [updateSpotlight]);
 
+  const saveSelectedMode = (mode: 'calendar' | 'classic') => {
+    const existing = db.getSync('timetable_settings', {
+      mode: 'calendar',
+      weeklyHolidays: ['Saturday', 'Sunday'],
+      startDate: new Date().toISOString().split('T')[0],
+      semesterEndDate: new Date(Date.now() + 120 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+    });
+    const updated = { ...existing, mode };
+    db.set('timetable_settings', updated);
+    db.set('bunkbuddy_mode_selected', true);
+    setChosenMode(mode);
+    window.dispatchEvent(new CustomEvent('timetable-settings-updated', { detail: updated }));
+  };
+
   const handleStartTour = () => {
+    saveSelectedMode(chosenMode);
     setShowWelcome(false);
     setCurrentStepIndex(0);
     setIsTourActive(true);
   };
 
   const handleSkipWelcome = () => {
+    saveSelectedMode(chosenMode);
     setShowWelcome(false);
     localStorage.setItem('bunkbuddy_tutorial_seen', 'true');
     localStorage.setItem('bunkbuddy_install_header_seen', 'true');
@@ -149,24 +188,24 @@ export const OnboardingTour: React.FC = () => {
     localStorage.setItem('bunkbuddy_tutorial_seen', 'true');
     localStorage.setItem('bunkbuddy_install_header_seen', 'true');
     window.dispatchEvent(new CustomEvent('install-header-hide'));
+    toast.success('Tour complete! You can now start managing your semester.');
   };
 
-  // Calculate card position so it never overflows or clips
+  // Safe viewport calculation preventing clipping on mobile/tablet/desktop
   const getCardStyle = () => {
     if (!targetRect) {
       return {
         top: '50%',
         left: '50%',
         transform: 'translate(-50%, -50%)',
-        maxWidth: '360px',
+        maxWidth: '380px',
         width: 'calc(100vw - 32px)'
       };
     }
 
-    const cardWidth = Math.min(360, window.innerWidth - 32);
+    const cardWidth = Math.min(380, window.innerWidth - 32);
     const isTargetInLowerHalf = targetRect.top > window.innerHeight / 2;
 
-    // Horizontal alignment clamped within viewport
     let left = targetRect.left + targetRect.width / 2 - cardWidth / 2;
     if (left < 16) left = 16;
     if (left + cardWidth > window.innerWidth - 16) {
@@ -174,24 +213,22 @@ export const OnboardingTour: React.FC = () => {
     }
 
     if (isTargetInLowerHalf) {
-      // Place above target
-      const bottom = window.innerHeight - targetRect.top + 16;
+      const bottom = Math.max(16, window.innerHeight - targetRect.top + 14);
       return {
         position: 'fixed' as const,
         left: `${left}px`,
         bottom: `${bottom}px`,
         width: `${cardWidth}px`,
-        maxHeight: `${targetRect.top - 32}px`
+        maxHeight: `${Math.max(200, targetRect.top - 28)}px`
       };
     } else {
-      // Place below target
-      const top = targetRect.bottom + 16;
+      const top = Math.max(16, targetRect.bottom + 14);
       return {
         position: 'fixed' as const,
         left: `${left}px`,
         top: `${top}px`,
         width: `${cardWidth}px`,
-        maxHeight: `${window.innerHeight - targetRect.bottom - 32}px`
+        maxHeight: `${Math.max(200, window.innerHeight - targetRect.bottom - 28)}px`
       };
     }
   };
@@ -201,8 +238,8 @@ export const OnboardingTour: React.FC = () => {
       {/* 1. First-Time Welcome Modal */}
       <AnimatePresence>
         {showWelcome && (
-          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 select-none">
-            {/* Dark Frosted Backdrop */}
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 select-none overflow-y-auto">
+            {/* Frosted Backdrop */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -214,57 +251,90 @@ export const OnboardingTour: React.FC = () => {
 
             {/* Welcome Card */}
             <motion.div
-              initial={{ opacity: 0, scale: 0.92, y: 16 }}
+              initial={{ opacity: 0, scale: 0.94, y: 16 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.92, y: 16 }}
+              exit={{ opacity: 0, scale: 0.94, y: 16 }}
               transition={{ type: 'spring', damping: 26, stiffness: 360 }}
-              className="relative z-10 w-full max-w-sm rounded-[28px] p-6 sm:p-7 bg-white/95 dark:bg-[#161824]/95 backdrop-blur-2xl border border-white/80 dark:border-white/10 shadow-[0_24px_50px_rgba(116,103,232,0.18),0_8px_24px_rgba(0,0,0,0.08),inset_0_1.5px_1px_rgba(255,255,255,0.95)] dark:shadow-[0_28px_60px_rgba(0,0,0,0.7),inset_0_1px_1px_rgba(255,255,255,0.18)] text-foreground space-y-4 text-center"
+              className="relative z-10 w-full max-w-md rounded-[32px] p-6 sm:p-7 bg-white/95 dark:bg-[#161824]/95 backdrop-blur-2xl border border-white/80 dark:border-white/10 shadow-[0_24px_50px_rgba(116,103,232,0.18),0_8px_24px_rgba(0,0,0,0.08)] dark:shadow-[0_28px_60px_rgba(0,0,0,0.7)] text-foreground space-y-4 my-auto"
             >
               {/* Logo in dark container */}
               <div className="mx-auto h-14 w-14 rounded-2xl bg-[#111218] p-2 flex items-center justify-center shadow-md border border-black/10 dark:border-white/10">
                 <img src="/logo.png" alt="BunkBuddy Logo" className="w-full h-full object-contain" />
               </div>
 
-              <div className="space-y-1.5">
+              <div className="text-center space-y-1.5">
                 <span className="text-[11px] font-bold uppercase tracking-wider text-[#7467E8] dark:text-[#A59BFF] font-display">
-                  BunkBuddy by Discuss
+                  Welcome to BunkBuddy
                 </span>
-                <h3 className="text-xl font-bold font-display tracking-tight text-foreground">
-                  Your Semester Game Plan
+                <h3 className="text-xl sm:text-2xl font-bold font-display tracking-tight text-foreground">
+                  Your Semester Attendance Suite
                 </h3>
                 <p className="text-xs text-[#666675] dark:text-[#9292A2] leading-relaxed font-medium">
-                  Master your attendance criteria, calculate bunk limits safely, and take control of your schedule.
+                  Take full control of your academic schedule, bunk safely within university limits, and keep your data backed up.
                 </p>
               </div>
 
-              {/* Cross-Device & PWA Callout Cards */}
-              <div className="space-y-2 text-left pt-1">
-                <div className="p-3 rounded-2xl bg-[#F6F6FA] dark:bg-[#15161F] border border-[#E8E7EF] dark:border-white/[0.08] space-y-0.5">
-                  <span className="text-[11px] font-bold text-foreground block">
-                    Cross-Device Freedom
-                  </span>
-                  <p className="text-[11px] text-[#666675] dark:text-[#9292A2] leading-relaxed">
-                    Export your data backup from one device and import it on another phone or laptop anytime.
-                  </p>
+              {/* Mode Selection Feature */}
+              <div className="space-y-2 pt-1">
+                <div className="flex items-center justify-between text-xs font-semibold text-[#666675] dark:text-[#9292A2]">
+                  <span>Choose Initial Tracking Mode:</span>
+                  <span className="text-[10px] text-[#7467E8] font-bold uppercase">Required</span>
                 </div>
 
-                <div className="p-3 rounded-2xl bg-[#F6F6FA] dark:bg-[#15161F] border border-[#E8E7EF] dark:border-white/[0.08] space-y-0.5">
-                  <span className="text-[11px] font-bold text-foreground block">
-                    Install to Home Screen (PWA)
-                  </span>
-                  <p className="text-[11px] text-[#666675] dark:text-[#9292A2] leading-relaxed">
-                    Tap your browser menu (⋮ or Share) and click "Add to Home Screen" for instant offline access.
-                  </p>
+                <div className="grid grid-cols-2 gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setChosenMode('calendar')}
+                    className={`p-3 rounded-2xl border text-left cursor-pointer transition-all ${
+                      chosenMode === 'calendar'
+                        ? 'bg-[#7467E8] text-white border-[#7467E8] shadow-sm'
+                        : 'bg-[#F6F6FA] dark:bg-[#15161F] text-foreground border-[#E8E7EF] dark:border-white/10'
+                    }`}
+                  >
+                    <span className="block text-xs font-bold font-display">Calendar Mode</span>
+                    <span className={`block text-[10px] mt-0.5 ${chosenMode === 'calendar' ? 'text-white/80' : 'text-[#666675] dark:text-[#9292A2]'}`}>
+                      Month calendar grid & leaves
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setChosenMode('classic')}
+                    className={`p-3 rounded-2xl border text-left cursor-pointer transition-all ${
+                      chosenMode === 'classic'
+                        ? 'bg-[#7467E8] text-white border-[#7467E8] shadow-sm'
+                        : 'bg-[#F6F6FA] dark:bg-[#15161F] text-foreground border-[#E8E7EF] dark:border-white/10'
+                    }`}
+                  >
+                    <span className="block text-xs font-bold font-display">Classic Mode</span>
+                    <span className={`block text-[10px] mt-0.5 ${chosenMode === 'classic' ? 'text-white/80' : 'text-[#666675] dark:text-[#9292A2]'}`}>
+                      Standard weekly schedule
+                    </span>
+                  </button>
                 </div>
               </div>
 
+              {/* Backup & Import Explanation Card */}
+              <div className="p-3.5 rounded-2xl bg-[#F6F6FA] dark:bg-[#15161F] border border-[#E8E7EF] dark:border-white/[0.08] space-y-1.5 text-left">
+                <div className="flex items-center gap-2">
+                  <DownloadCloud size={15} className="text-[#7467E8] flex-shrink-0" />
+                  <span className="text-xs font-bold text-foreground">
+                    Cross-Device Backup & Restore
+                  </span>
+                </div>
+                <p className="text-[11px] text-[#666675] dark:text-[#9292A2] leading-relaxed">
+                  All data is kept private in local storage. Use Export Backup to download your JSON file, then Import it on your phone, tablet, or laptop anytime to transfer your records instantly.
+                </p>
+              </div>
+
+              {/* Actions */}
               <div className="space-y-2 pt-2">
                 <button
                   type="button"
                   onClick={handleStartTour}
                   className="w-full py-3 px-6 rounded-full text-xs font-bold text-white bg-[#7467E8] hover:bg-[#6658DF] shadow-[0_4px_16px_rgba(116,103,232,0.4)] transition-all cursor-pointer active:scale-98"
                 >
-                  Start Quick Tour
+                  Start Feature Walkthrough
                 </button>
 
                 <button
@@ -272,7 +342,7 @@ export const OnboardingTour: React.FC = () => {
                   onClick={handleSkipWelcome}
                   className="w-full py-2 text-xs font-semibold text-[#666675] dark:text-[#9292A2] hover:text-foreground transition-colors cursor-pointer"
                 >
-                  Maybe Later
+                  Go Straight to Dashboard
                 </button>
               </div>
             </motion.div>
@@ -288,9 +358,7 @@ export const OnboardingTour: React.FC = () => {
             <svg className="fixed inset-0 w-full h-full pointer-events-none transition-all duration-300">
               <defs>
                 <mask id="tour-spotlight-mask">
-                  {/* White background means fully opaque / dimmed */}
                   <rect x="0" y="0" width="100%" height="100%" fill="white" />
-                  {/* Black cutout means fully transparent / spotlight */}
                   {targetRect && (
                     <rect
                       x={targetRect.left - 6}
@@ -305,7 +373,6 @@ export const OnboardingTour: React.FC = () => {
                 </mask>
               </defs>
 
-              {/* The Dimmed Backdrop Rect */}
               <rect
                 x="0"
                 y="0"
@@ -339,7 +406,7 @@ export const OnboardingTour: React.FC = () => {
               exit={{ opacity: 0, scale: 0.94, y: 8 }}
               transition={{ duration: 0.2 }}
               style={getCardStyle()}
-              className="z-[132] rounded-[24px] p-5 sm:p-6 bg-white/95 dark:bg-[#161824]/95 backdrop-blur-2xl border border-white/80 dark:border-white/10 shadow-[0_20px_48px_rgba(0,0,0,0.22),0_4px_16px_rgba(116,103,232,0.15),inset_0_1.5px_1px_rgba(255,255,255,0.95)] dark:shadow-[0_24px_50px_rgba(0,0,0,0.65),inset_0_1px_1px_rgba(255,255,255,0.18)] text-foreground space-y-3.5"
+              className="z-[132] rounded-[26px] p-5 sm:p-6 bg-white/95 dark:bg-[#161824]/95 backdrop-blur-2xl border border-white/80 dark:border-white/10 shadow-[0_20px_48px_rgba(0,0,0,0.22),0_4px_16px_rgba(116,103,232,0.15)] dark:shadow-[0_24px_50px_rgba(0,0,0,0.65)] text-foreground space-y-3.5 overflow-y-auto custom-scrollbar"
             >
               {/* Header with Step indicator */}
               <div className="flex items-center justify-between">
@@ -364,6 +431,11 @@ export const OnboardingTour: React.FC = () => {
                 <p className="text-xs sm:text-sm text-[#666675] dark:text-[#B9BBC7] leading-relaxed font-medium">
                   {TOUR_STEPS[currentStepIndex].description}
                 </p>
+                {TOUR_STEPS[currentStepIndex].tip && (
+                  <p className="text-[11px] text-[#7467E8] dark:text-[#A59BFF] font-semibold pt-1">
+                    Pro Tip: {TOUR_STEPS[currentStepIndex].tip}
+                  </p>
+                )}
               </div>
 
               {/* Navigation Controls */}

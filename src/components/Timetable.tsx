@@ -13,9 +13,10 @@ import {
   ChevronRight, 
   CalendarDays, 
   Coffee, 
-  Sparkles, 
   FileText,
-  AlertCircle
+  AlertCircle,
+  SlidersHorizontal,
+  Info
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -57,6 +58,7 @@ interface DailyAttendanceRecord {
 }
 
 const ALL_WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+const WEEKDAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 const Timetable: React.FC = () => {
   const [subjects, setSubjects] = useState<Subject[]>([]);
@@ -73,6 +75,10 @@ const Timetable: React.FC = () => {
   });
 
   const [selectedDate, setSelectedDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+  
+  // Year & Month for full month calendar grid navigation
+  const [currentCalendarMonth, setCurrentCalendarMonth] = useState<Date>(() => new Date());
+
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
   const [leaveReason, setLeaveReason] = useState('Sick Leave');
@@ -97,15 +103,38 @@ const Timetable: React.FC = () => {
     setSubjects(loaded);
   }, []);
 
+  // Listen for open-settings event (from AddSubject or other views)
+  useEffect(() => {
+    const handleOpenSettings = () => {
+      setIsSettingsOpen(true);
+    };
+    window.addEventListener('open-timetable-settings', handleOpenSettings);
+    return () => window.removeEventListener('open-timetable-settings', handleOpenSettings);
+  }, []);
+
+  // Listen for external settings update
+  useEffect(() => {
+    const handleSettingsUpdate = (e: any) => {
+      if (e.detail) {
+        setSettings(e.detail);
+      }
+    };
+    window.addEventListener('timetable-settings-updated', handleSettingsUpdate as EventListener);
+    return () => window.removeEventListener('timetable-settings-updated', handleSettingsUpdate as EventListener);
+  }, []);
+
   const saveSettings = (newSettings: TimetableSettings) => {
     setSettings(newSettings);
     db.set('timetable_settings', newSettings);
+    db.set('bunkbuddy_mode_selected', true);
     setIsSettingsOpen(false);
+    window.dispatchEvent(new CustomEvent('timetable-settings-updated', { detail: newSettings }));
     toast.success('Timetable configuration saved');
   };
 
   const formatIndianDate = (dateStr: string) => {
-    const d = new Date(dateStr);
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const d = new Date(year, month - 1, day);
     return d.toLocaleDateString('en-IN', {
       day: '2-digit',
       month: 'short',
@@ -114,7 +143,8 @@ const Timetable: React.FC = () => {
   };
 
   const getDayName = (dateStr: string) => {
-    const d = new Date(dateStr);
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const d = new Date(year, month - 1, day);
     return d.toLocaleDateString('en-US', { weekday: 'long' });
   };
 
@@ -233,9 +263,26 @@ const Timetable: React.FC = () => {
   };
 
   const changeDateBy = (offset: number) => {
-    const current = new Date(selectedDate);
+    const [year, month, day] = selectedDate.split('-').map(Number);
+    const current = new Date(year, month - 1, day);
     current.setDate(current.getDate() + offset);
-    setSelectedDate(current.toISOString().split('T')[0]);
+    const newDateStr = current.toISOString().split('T')[0];
+    setSelectedDate(newDateStr);
+    setCurrentCalendarMonth(new Date(current.getFullYear(), current.getMonth(), 1));
+  };
+
+  const changeMonthBy = (offset: number) => {
+    setCurrentCalendarMonth(prev => {
+      const newDate = new Date(prev.getFullYear(), prev.getMonth() + offset, 1);
+      return newDate;
+    });
+  };
+
+  const jumpToToday = () => {
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+    setSelectedDate(todayStr);
+    setCurrentCalendarMonth(new Date(today.getFullYear(), today.getMonth(), 1));
   };
 
   const getAttendanceStatus = (attended: number, total: number, required = 75) => {
@@ -305,6 +352,110 @@ const Timetable: React.FC = () => {
     toast.success('Subject schedule updated');
   };
 
+  // Build month calendar days matrix
+  const currentYear = currentCalendarMonth.getFullYear();
+  const currentMonthIdx = currentCalendarMonth.getMonth();
+  const monthName = currentCalendarMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+  const firstDayOfMonth = new Date(currentYear, currentMonthIdx, 1);
+  // Mon = 0, Tue = 1, ... Sun = 6
+  const startDayOffset = (firstDayOfMonth.getDay() + 6) % 7;
+  const daysInMonth = new Date(currentYear, currentMonthIdx + 1, 0).getDate();
+  const daysInPrevMonth = new Date(currentYear, currentMonthIdx, 0).getDate();
+
+  // Generate calendar cells
+  interface CalendarCell {
+    dateStr: string;
+    dayNum: number;
+    isCurrentMonth: boolean;
+    isToday: boolean;
+    isSelected: boolean;
+    isHoliday: boolean;
+    holidayLabel?: string;
+    classCount: number;
+    hasLogs: boolean;
+    allAttended: boolean;
+    anyMissed: boolean;
+  }
+
+  const calendarCells: CalendarCell[] = [];
+  const todayStr = new Date().toISOString().split('T')[0];
+
+  // 1. Previous month padding cells
+  for (let i = startDayOffset - 1; i >= 0; i--) {
+    const dayNum = daysInPrevMonth - i;
+    const prevMonthDate = new Date(currentYear, currentMonthIdx - 1, dayNum);
+    const dateStr = prevMonthDate.toISOString().split('T')[0];
+    const dayName = getDayName(dateStr);
+    const isHoliday = isWeeklyHoliday(dateStr) || dailyLogs[dateStr]?.status === 'holiday' || dailyLogs[dateStr]?.status === 'sick_leave';
+    const classes = subjects.filter(s => s.days?.includes(dayName));
+    const logs = dailyLogs[dateStr]?.classLogs;
+
+    calendarCells.push({
+      dateStr,
+      dayNum,
+      isCurrentMonth: false,
+      isToday: dateStr === todayStr,
+      isSelected: dateStr === selectedDate,
+      isHoliday,
+      holidayLabel: dailyLogs[dateStr]?.note,
+      classCount: classes.length,
+      hasLogs: !!logs && Object.keys(logs).length > 0,
+      allAttended: !!logs && classes.length > 0 && classes.every(c => logs[c.id] === 'attended'),
+      anyMissed: !!logs && Object.values(logs).includes('missed')
+    });
+  }
+
+  // 2. Current month cells
+  for (let day = 1; day <= daysInMonth; day++) {
+    const d = new Date(currentYear, currentMonthIdx, day);
+    // Format YYYY-MM-DD
+    const dateStr = `${currentYear}-${String(currentMonthIdx + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const dayName = getDayName(dateStr);
+    const isHoliday = isWeeklyHoliday(dateStr) || dailyLogs[dateStr]?.status === 'holiday' || dailyLogs[dateStr]?.status === 'sick_leave';
+    const classes = subjects.filter(s => s.days?.includes(dayName));
+    const logs = dailyLogs[dateStr]?.classLogs;
+
+    calendarCells.push({
+      dateStr,
+      dayNum: day,
+      isCurrentMonth: true,
+      isToday: dateStr === todayStr,
+      isSelected: dateStr === selectedDate,
+      isHoliday,
+      holidayLabel: dailyLogs[dateStr]?.note,
+      classCount: classes.length,
+      hasLogs: !!logs && Object.keys(logs).length > 0,
+      allAttended: !!logs && classes.length > 0 && classes.every(c => logs[c.id] === 'attended'),
+      anyMissed: !!logs && Object.values(logs).includes('missed')
+    });
+  }
+
+  // 3. Trailing next month cells to complete 7-day grid
+  const remainingCells = (7 - (calendarCells.length % 7)) % 7;
+  for (let i = 1; i <= remainingCells; i++) {
+    const nextMonthDate = new Date(currentYear, currentMonthIdx + 1, i);
+    const dateStr = nextMonthDate.toISOString().split('T')[0];
+    const dayName = getDayName(dateStr);
+    const isHoliday = isWeeklyHoliday(dateStr) || dailyLogs[dateStr]?.status === 'holiday' || dailyLogs[dateStr]?.status === 'sick_leave';
+    const classes = subjects.filter(s => s.days?.includes(dayName));
+    const logs = dailyLogs[dateStr]?.classLogs;
+
+    calendarCells.push({
+      dateStr,
+      dayNum: i,
+      isCurrentMonth: false,
+      isToday: dateStr === todayStr,
+      isSelected: dateStr === selectedDate,
+      isHoliday,
+      holidayLabel: dailyLogs[dateStr]?.note,
+      classCount: classes.length,
+      hasLogs: !!logs && Object.keys(logs).length > 0,
+      allAttended: !!logs && classes.length > 0 && classes.every(c => logs[c.id] === 'attended'),
+      anyMissed: !!logs && Object.values(logs).includes('missed')
+    });
+  }
+
   const todayDayName = new Date().toLocaleDateString('en-US', { weekday: 'long' });
   const selectedDayName = getDayName(selectedDate);
   const selectedDateLog = dailyLogs[selectedDate];
@@ -321,11 +472,18 @@ const Timetable: React.FC = () => {
             <CalendarDays strokeWidth={1.8} className="h-6 w-6" />
           </div>
           <div>
-            <h2 className="text-xl sm:text-2xl font-bold font-display text-foreground tracking-tight">
-              Class Timetable & Attendance
-            </h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl sm:text-2xl font-bold font-display text-foreground tracking-tight">
+                Class Timetable & Attendance
+              </h2>
+              <span className="hidden sm:inline-flex px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-[#E8E4FF] dark:bg-[#7467E8]/20 text-[#7467E8] dark:text-[#A59BFF]">
+                {settings.mode === 'calendar' ? 'Calendar Mode' : 'Classic Mode'}
+              </span>
+            </div>
             <p className="text-xs text-[#666675] dark:text-[#9292A2] font-medium mt-0.5">
-              {settings.mode === 'calendar' ? 'Calendar-linked daily tracking with holiday support' : 'Weekly lecture logging and schedule tracker'}
+              {settings.mode === 'calendar' 
+                ? 'Full interactive month calendar, daily date-by-date logging, and leave management' 
+                : 'Weekly routine timetable and lecture attendance logging'}
             </p>
           </div>
         </div>
@@ -350,7 +508,7 @@ const Timetable: React.FC = () => {
             title="Configure tracking mode, weekly holidays, and semester end date"
           >
             <Settings2 size={14} />
-            <span className="hidden sm:inline">Settings</span>
+            <span>Settings</span>
           </Button>
         </div>
       </div>
@@ -378,7 +536,7 @@ const Timetable: React.FC = () => {
               : 'text-[#666675] dark:text-[#9292A2] hover:text-foreground'
           }`}
         >
-          Calendar Date View
+          Full Month Calendar
         </button>
 
         <button
@@ -401,7 +559,7 @@ const Timetable: React.FC = () => {
             <div className="flex items-center gap-2">
               <span className="h-2.5 w-2.5 rounded-full bg-[#7467E8]"></span>
               <h3 className="text-base font-bold font-display text-foreground">
-                Today — {todayDayName}, {formatIndianDate(new Date().toISOString())}
+                Today — {todayDayName}, {formatIndianDate(new Date().toISOString().split('T')[0])}
               </h3>
             </div>
             <span className="text-xs font-semibold text-[#666675] dark:text-[#9292A2] bg-[#F1F0F8] dark:bg-[#20222C] px-3 py-1 rounded-full">
@@ -410,13 +568,13 @@ const Timetable: React.FC = () => {
           </div>
 
           {todaySubjects.length === 0 ? (
-            <Card className="glass-card p-8 text-center space-y-3 max-w-md mx-auto my-6">
+            <Card className="glass-card p-8 text-center space-y-3 max-w-md mx-auto my-6 rounded-[24px]">
               <div className="h-12 w-12 rounded-full bg-[#DDEDEA] dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 flex items-center justify-center mx-auto">
                 <Coffee size={24} strokeWidth={2} />
               </div>
               <h4 className="font-bold text-sm text-foreground font-display">No classes scheduled for today!</h4>
               <p className="text-xs text-[#666675] dark:text-[#9292A2]">
-                Enjoy your break or switch to the Weekly Overview to review your full timetable.
+                Enjoy your break or switch to the Full Month Calendar to inspect your schedule for any day.
               </p>
             </Card>
           ) : (
@@ -426,7 +584,7 @@ const Timetable: React.FC = () => {
                 const pct = subj.totalClasses === 0 ? 0 : Math.round((subj.attendedClasses / subj.totalClasses) * 100);
 
                 return (
-                  <Card key={subj.id} className="glass-card p-5 space-y-4 hover:border-[#7467E8]/40 transition-all">
+                  <Card key={subj.id} className="glass-card p-5 space-y-4 hover:border-[#7467E8]/40 transition-all rounded-[22px]">
                     <div className="flex justify-between items-start gap-2">
                       <div className="space-y-1">
                         <h4 className="font-bold text-sm sm:text-base text-foreground font-display leading-tight line-clamp-1">
@@ -489,170 +647,318 @@ const Timetable: React.FC = () => {
         </div>
       )}
 
-      {/* VIEW 2: CALENDAR DATE VIEW */}
+      {/* VIEW 2: FULL MONTH CALENDAR VIEW */}
       {activeView === 'calendar' && (
-        <div className="space-y-5">
-          {/* Date Selector Navigation Bar */}
-          <Card className="glass-card p-4 sm:p-5 rounded-[24px] flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-start">
-              <button
-                type="button"
-                onClick={() => changeDateBy(-1)}
-                className="h-9 w-9 rounded-full bg-[#F1F0F8] dark:bg-[#20222C] border border-[#E8E7EF] dark:border-white/10 flex items-center justify-center text-foreground hover:bg-[#E8E4FF] transition-colors cursor-pointer"
-                title="Previous Day"
-              >
-                <ChevronLeft size={16} />
-              </button>
+        <div className="space-y-6">
+          {/* Full Monthly Calendar Card */}
+          <Card className="glass-card p-5 sm:p-7 rounded-[28px] space-y-5 border border-[#E8E7EF] dark:border-white/10 shadow-sm">
+            {/* Calendar Month Navigation Header */}
+            <div className="flex items-center justify-between flex-wrap gap-3 pb-2 border-b border-[#E8E7EF] dark:border-white/10">
+              <div className="flex items-center gap-2.5">
+                <div className="h-10 w-10 rounded-2xl bg-[#E8E4FF] dark:bg-[#7467E8]/20 text-[#7467E8] dark:text-[#A59BFF] flex items-center justify-center">
+                  <CalendarDays size={20} strokeWidth={2} />
+                </div>
+                <div>
+                  <h3 className="text-lg sm:text-xl font-bold font-display text-foreground tracking-tight">
+                    {monthName}
+                  </h3>
+                  <p className="text-[11px] text-[#666675] dark:text-[#9292A2] font-medium">
+                    Tap any date to inspect scheduled classes or log attendance
+                  </p>
+                </div>
+              </div>
 
+              {/* Month Switcher Controls */}
               <div className="flex items-center gap-2">
-                <Input
-                  type="date"
-                  value={selectedDate}
-                  onChange={(e) => e.target.value && setSelectedDate(e.target.value)}
-                  className="h-9 rounded-full px-3 text-xs font-semibold w-36 sm:w-40 border-[#E8E7EF] dark:border-white/10"
-                />
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setSelectedDate(new Date().toISOString().split('T')[0])}
-                  className="h-9 rounded-full text-xs font-bold px-3 cursor-pointer"
+                  onClick={() => changeMonthBy(-1)}
+                  className="h-9 w-9 p-0 rounded-full cursor-pointer hover:bg-[#E8E4FF] dark:hover:bg-[#7467E8]/20"
+                  title="Previous Month"
+                >
+                  <ChevronLeft size={16} />
+                </Button>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={jumpToToday}
+                  className="h-9 rounded-full px-3.5 text-xs font-bold cursor-pointer"
                 >
                   Today
                 </Button>
-              </div>
 
-              <button
-                type="button"
-                onClick={() => changeDateBy(1)}
-                className="h-9 w-9 rounded-full bg-[#F1F0F8] dark:bg-[#20222C] border border-[#E8E7EF] dark:border-white/10 flex items-center justify-center text-foreground hover:bg-[#E8E4FF] transition-colors cursor-pointer"
-                title="Next Day"
-              >
-                <ChevronRight size={16} />
-              </button>
-            </div>
-
-            {/* Selected Date Information & Action */}
-            <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
-              <div className="text-left sm:text-right">
-                <span className="font-bold text-sm font-display text-foreground block">
-                  {selectedDayName}, {formatIndianDate(selectedDate)}
-                </span>
-                <span className="text-[11px] text-[#666675] dark:text-[#9292A2] font-medium">
-                  {isSelectedDateHoliday ? 'Non-Instructional / Holiday' : `${selectedDaySubjects.length} classes scheduled`}
-                </span>
-              </div>
-
-              {isSelectedDateHoliday ? (
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => removeDayLeave(selectedDate)}
-                  className="rounded-full text-xs font-semibold text-rose-600 dark:text-rose-400 border-rose-500/30 hover:bg-rose-500/10 cursor-pointer h-9"
+                  onClick={() => changeMonthBy(1)}
+                  className="h-9 w-9 p-0 rounded-full cursor-pointer hover:bg-[#E8E4FF] dark:hover:bg-[#7467E8]/20"
+                  title="Next Month"
                 >
-                  Clear Holiday
+                  <ChevronRight size={16} />
                 </Button>
-              ) : (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setIsLeaveModalOpen(true)}
-                  className="rounded-full text-xs font-semibold gap-1.5 cursor-pointer h-9"
-                >
-                  <Coffee size={13} />
-                  Mark Day Off / Leave
-                </Button>
-              )}
-            </div>
-          </Card>
-
-          {/* If the day is a Holiday or Leave Day */}
-          {isSelectedDateHoliday ? (
-            <Card className="glass-card p-8 rounded-[24px] text-center space-y-3 bg-[#DDEDEA]/30 dark:bg-emerald-500/10 border-emerald-500/20 max-w-lg mx-auto">
-              <div className="h-12 w-12 rounded-full bg-[#DDEDEA] dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 flex items-center justify-center mx-auto">
-                <Coffee size={22} strokeWidth={2} />
               </div>
-              <div className="space-y-1">
-                <h4 className="font-bold text-base text-foreground font-display">
-                  {selectedDateLog?.note || (isWeeklyHoliday(selectedDate) ? 'Weekly Holiday' : 'Day Off')}
-                </h4>
-                <p className="text-xs text-[#666675] dark:text-[#9292A2]">
-                  Attendance tracking is paused for this date. No missed classes will be counted against your records.
-                </p>
-              </div>
-            </Card>
-          ) : selectedDaySubjects.length === 0 ? (
-            <div className="p-8 rounded-[24px] bg-white/50 dark:bg-[#181A22]/50 border border-dashed border-[#E8E7EF] dark:border-white/10 text-center max-w-md mx-auto">
-              <p className="text-xs text-[#9292A2] dark:text-[#888B98] italic">
-                No classes scheduled for {selectedDayName}
-              </p>
             </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-              {selectedDaySubjects.map((subj) => {
-                const status = getAttendanceStatus(subj.attendedClasses, subj.totalClasses, subj.requiredAttendance);
-                const pct = subj.totalClasses === 0 ? 0 : Math.round((subj.attendedClasses / subj.totalClasses) * 100);
-                const logForThisDate = selectedDateLog?.classLogs?.[subj.id];
 
+            {/* Calendar 7-Day Header */}
+            <div className="grid grid-cols-7 gap-1 sm:gap-2 text-center select-none">
+              {WEEKDAY_SHORT.map((wd, idx) => {
+                const isOff = settings.weeklyHolidays.includes(ALL_WEEKDAYS[idx]);
                 return (
-                  <Card key={`${selectedDate}-${subj.id}`} className="glass-card p-5 space-y-4">
-                    <div className="flex justify-between items-start gap-2">
-                      <div>
-                        <h4 className="font-bold text-sm sm:text-base text-foreground font-display leading-tight line-clamp-1">
-                          {subj.name}
-                        </h4>
-                        <p className="text-xs text-[#666675] dark:text-[#9292A2] font-medium mt-0.5">
-                          Total: <strong className="text-foreground">{subj.attendedClasses}/{subj.totalClasses}</strong> ({pct}%)
-                        </p>
-                      </div>
-
-                      {logForThisDate ? (
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                          logForThisDate === 'attended' 
-                            ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300' 
-                            : 'bg-rose-500/15 text-rose-700 dark:text-rose-300'
-                        }`}>
-                          Logged: {logForThisDate === 'attended' ? 'Attended' : 'Missed'}
-                        </span>
-                      ) : (
-                        <Badge variant={status === 'good' ? 'mint' : status === 'warning' ? 'warning' : 'destructive'}>
-                          {pct}%
-                        </Badge>
-                      )}
-                    </div>
-
-                    {/* Attend / Miss buttons for this date */}
-                    <div className="flex gap-2.5 pt-1">
-                      <button
-                        type="button"
-                        onClick={() => markAttendance(subj.id, true, selectedDate)}
-                        className={`flex-1 py-2.5 px-3 text-xs font-bold rounded-[14px] flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs active:scale-95 ${
-                          logForThisDate === 'attended'
-                            ? 'bg-emerald-600 text-white shadow-md'
-                            : 'bg-[#DDEDEA] hover:bg-[#cde4e0] dark:bg-emerald-500/15 text-emerald-900 dark:text-emerald-300 border border-emerald-500/20'
-                        }`}
-                      >
-                        <Check size={14} strokeWidth={2.5} />
-                        Attended
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => markAttendance(subj.id, false, selectedDate)}
-                        className={`flex-1 py-2.5 px-3 text-xs font-bold rounded-[14px] flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs active:scale-95 ${
-                          logForThisDate === 'missed'
-                            ? 'bg-rose-600 text-white shadow-md'
-                            : 'bg-[#F7DDE9] hover:bg-[#f3cbdc] dark:bg-rose-500/15 text-rose-900 dark:text-rose-300 border border-rose-500/20'
-                        }`}
-                      >
-                        <X size={14} strokeWidth={2.5} />
-                        Missed
-                      </button>
-                    </div>
-                  </Card>
+                  <div 
+                    key={wd} 
+                    className={`py-2 text-[11px] font-bold uppercase tracking-wider ${
+                      isOff 
+                        ? 'text-rose-500/70 dark:text-rose-400/70' 
+                        : 'text-[#666675] dark:text-[#9292A2]'
+                    }`}
+                  >
+                    {wd}
+                  </div>
                 );
               })}
             </div>
-          )}
+
+            {/* Calendar Days Matrix */}
+            <div className="grid grid-cols-7 gap-1 sm:gap-2 select-none">
+              {calendarCells.map((cell) => {
+                const isSelected = cell.dateStr === selectedDate;
+                return (
+                  <div
+                    key={cell.dateStr}
+                    onClick={() => setSelectedDate(cell.dateStr)}
+                    className={`min-h-[58px] sm:min-h-[70px] p-1.5 sm:p-2 rounded-[16px] sm:rounded-[18px] border transition-all cursor-pointer flex flex-col justify-between text-left group active:scale-95 ${
+                      isSelected
+                        ? 'bg-[#7467E8] text-white border-[#7467E8] shadow-md shadow-[#7467E8]/30 scale-[1.02] z-10'
+                        : cell.isToday
+                        ? 'bg-[#E8E4FF]/60 dark:bg-[#7467E8]/20 border-[#7467E8] text-foreground'
+                        : cell.isCurrentMonth
+                        ? 'bg-white/70 dark:bg-[#181A22]/70 border-[#E8E7EF] dark:border-white/10 text-foreground hover:border-[#7467E8]/40 hover:bg-white dark:hover:bg-[#1E202C]'
+                        : 'bg-black/[0.02] dark:bg-white/[0.02] border-transparent text-[#9292A2]/50 dark:text-[#666675]/50'
+                    }`}
+                  >
+                    {/* Top Row: Date Number & Holiday Indicator */}
+                    <div className="flex items-center justify-between">
+                      <span className={`text-xs sm:text-sm font-bold font-display ${
+                        isSelected 
+                          ? 'text-white' 
+                          : cell.isToday 
+                          ? 'text-[#7467E8] dark:text-[#A59BFF]' 
+                          : cell.isCurrentMonth 
+                          ? 'text-foreground' 
+                          : 'text-[#9292A2]/60'
+                      }`}>
+                        {cell.dayNum}
+                      </span>
+
+                      {cell.isHoliday && (
+                        <span 
+                          className={`text-[10px] ${isSelected ? 'text-white' : 'text-amber-600 dark:text-amber-400'}`}
+                          title={cell.holidayLabel || 'Holiday / Day Off'}
+                        >
+                          <Coffee size={12} strokeWidth={2} />
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Bottom Row: Scheduled Class Indicator / Status */}
+                    <div className="pt-1 flex items-center justify-between">
+                      {cell.isHoliday ? (
+                        <span className={`text-[9px] font-semibold truncate ${
+                          isSelected ? 'text-white/90' : 'text-[#9292A2] dark:text-[#888B98]'
+                        }`}>
+                          Off
+                        </span>
+                      ) : cell.classCount > 0 ? (
+                        <div className="flex items-center gap-1 w-full justify-between">
+                          <span className={`text-[9px] sm:text-[10px] font-bold px-1.5 py-0.2 rounded-full ${
+                            isSelected
+                              ? 'bg-white/20 text-white'
+                              : 'bg-[#F1F0F8] dark:bg-[#252836] text-[#7467E8] dark:text-[#A59BFF]'
+                          }`}>
+                            {cell.classCount} {cell.classCount === 1 ? 'class' : 'classes'}
+                          </span>
+
+                          {/* Attendance Status Dot */}
+                          {cell.hasLogs && (
+                            <span 
+                              className={`h-2 w-2 rounded-full flex-shrink-0 ${
+                                cell.allAttended 
+                                  ? 'bg-emerald-400' 
+                                  : cell.anyMissed 
+                                  ? 'bg-rose-400' 
+                                  : 'bg-amber-400'
+                              }`} 
+                              title="Attendance logged"
+                            />
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-[9px] opacity-0 group-hover:opacity-60 text-muted-foreground">-</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+
+          {/* Selected Date Inspector Card */}
+          <Card className="glass-card p-5 sm:p-7 rounded-[28px] border border-[#E8E7EF] dark:border-white/10 space-y-5">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-3 border-b border-[#E8E7EF] dark:border-white/10">
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => changeDateBy(-1)}
+                  className="h-9 w-9 rounded-full bg-[#F1F0F8] dark:bg-[#20222C] border border-[#E8E7EF] dark:border-white/10 flex items-center justify-center text-foreground hover:bg-[#E8E4FF] transition-colors cursor-pointer"
+                  title="Previous Day"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-base sm:text-lg font-bold font-display text-foreground">
+                      {selectedDayName}, {formatIndianDate(selectedDate)}
+                    </h4>
+                    {selectedDate === todayStr && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#7467E8] text-white">
+                        Today
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-[#666675] dark:text-[#9292A2] font-medium mt-0.5">
+                    {isSelectedDateHoliday 
+                      ? 'Non-Instructional / Holiday (Classes paused)' 
+                      : `${selectedDaySubjects.length} ${selectedDaySubjects.length === 1 ? 'class' : 'classes'} scheduled for this day`}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => changeDateBy(1)}
+                  className="h-9 w-9 rounded-full bg-[#F1F0F8] dark:bg-[#20222C] border border-[#E8E7EF] dark:border-white/10 flex items-center justify-center text-foreground hover:bg-[#E8E4FF] transition-colors cursor-pointer"
+                  title="Next Day"
+                >
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+
+              {/* Day Off / Leave Action */}
+              <div className="flex items-center gap-2">
+                {isSelectedDateHoliday ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => removeDayLeave(selectedDate)}
+                    className="rounded-full text-xs font-semibold text-rose-600 dark:text-rose-400 border-rose-500/30 hover:bg-rose-500/10 cursor-pointer h-9 px-4"
+                  >
+                    Clear Holiday Status
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsLeaveModalOpen(true)}
+                    className="rounded-full text-xs font-semibold gap-1.5 cursor-pointer h-9 px-4"
+                  >
+                    <Coffee size={14} />
+                    Mark Day Off / Leave
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            {/* If Selected Day is a Holiday */}
+            {isSelectedDateHoliday ? (
+              <div className="p-8 rounded-[24px] text-center space-y-3 bg-[#DDEDEA]/30 dark:bg-emerald-500/10 border border-emerald-500/20 max-w-lg mx-auto">
+                <div className="h-12 w-12 rounded-full bg-[#DDEDEA] dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 flex items-center justify-center mx-auto">
+                  <Coffee size={22} strokeWidth={2} />
+                </div>
+                <div className="space-y-1">
+                  <h4 className="font-bold text-base text-foreground font-display">
+                    {selectedDateLog?.note || (isWeeklyHoliday(selectedDate) ? 'Weekly Holiday' : 'Day Off')}
+                  </h4>
+                  <p className="text-xs text-[#666675] dark:text-[#9292A2]">
+                    Attendance tracking is paused for this date. No missed lectures will count against your criteria.
+                  </p>
+                </div>
+              </div>
+            ) : selectedDaySubjects.length === 0 ? (
+              <div className="p-8 rounded-[24px] bg-white/50 dark:bg-[#181A22]/50 border border-dashed border-[#E8E7EF] dark:border-white/10 text-center max-w-md mx-auto">
+                <p className="text-xs text-[#9292A2] dark:text-[#888B98] italic">
+                  No classes scheduled for {selectedDayName}
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                {selectedDaySubjects.map((subj) => {
+                  const status = getAttendanceStatus(subj.attendedClasses, subj.totalClasses, subj.requiredAttendance);
+                  const pct = subj.totalClasses === 0 ? 0 : Math.round((subj.attendedClasses / subj.totalClasses) * 100);
+                  const logForThisDate = selectedDateLog?.classLogs?.[subj.id];
+
+                  return (
+                    <Card key={`${selectedDate}-${subj.id}`} className="glass-card p-5 space-y-4 rounded-[22px]">
+                      <div className="flex justify-between items-start gap-2">
+                        <div>
+                          <h4 className="font-bold text-sm sm:text-base text-foreground font-display leading-tight line-clamp-1">
+                            {subj.name}
+                          </h4>
+                          <p className="text-xs text-[#666675] dark:text-[#9292A2] font-medium mt-0.5">
+                            Total: <strong className="text-foreground">{subj.attendedClasses}/{subj.totalClasses}</strong> ({pct}%)
+                          </p>
+                        </div>
+
+                        {logForThisDate ? (
+                          <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${
+                            logForThisDate === 'attended' 
+                              ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300' 
+                              : 'bg-rose-500/15 text-rose-700 dark:text-rose-300'
+                          }`}>
+                            {logForThisDate === 'attended' ? 'Attended' : 'Missed'}
+                          </span>
+                        ) : (
+                          <Badge variant={status === 'good' ? 'mint' : status === 'warning' ? 'warning' : 'destructive'}>
+                            {pct}%
+                          </Badge>
+                        )}
+                      </div>
+
+                      {/* Attend / Miss buttons for this date */}
+                      <div className="flex gap-2.5 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => markAttendance(subj.id, true, selectedDate)}
+                          className={`flex-1 py-2.5 px-3 text-xs font-bold rounded-[14px] flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs active:scale-95 ${
+                            logForThisDate === 'attended'
+                              ? 'bg-emerald-600 text-white shadow-md'
+                              : 'bg-[#DDEDEA] hover:bg-[#cde4e0] dark:bg-emerald-500/15 text-emerald-900 dark:text-emerald-300 border border-emerald-500/20'
+                          }`}
+                        >
+                          <Check size={14} strokeWidth={2.5} />
+                          Attended
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => markAttendance(subj.id, false, selectedDate)}
+                          className={`flex-1 py-2.5 px-3 text-xs font-bold rounded-[14px] flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs active:scale-95 ${
+                            logForThisDate === 'missed'
+                              ? 'bg-rose-600 text-white shadow-md'
+                              : 'bg-[#F7DDE9] hover:bg-[#f3cbdc] dark:bg-rose-500/15 text-rose-900 dark:text-rose-300 border border-rose-500/20'
+                          }`}
+                        >
+                          <X size={14} strokeWidth={2.5} />
+                          Missed
+                        </button>
+                      </div>
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
+          </Card>
         </div>
       )}
 
@@ -686,7 +992,7 @@ const Timetable: React.FC = () => {
                       const pct = subj.totalClasses === 0 ? 0 : Math.round((subj.attendedClasses / subj.totalClasses) * 100);
 
                       return (
-                        <Card key={`${day}-${subj.id}`} className="glass-card p-5 space-y-4 hover:border-[#7467E8]/40">
+                        <Card key={`${day}-${subj.id}`} className="glass-card p-5 space-y-4 hover:border-[#7467E8]/40 rounded-[22px]">
                           <div className="flex justify-between items-start gap-2">
                             <div className="space-y-1">
                               <h4 className="font-bold text-sm sm:text-base text-foreground font-display leading-tight line-clamp-1">
@@ -813,7 +1119,12 @@ const Timetable: React.FC = () => {
           <div className="space-y-4 py-2 text-xs">
             {/* Mode Selector */}
             <div className="space-y-2 p-3.5 rounded-2xl bg-[#F6F6FA] dark:bg-[#15161F] border border-[#E8E7EF] dark:border-white/10">
-              <span className="font-bold text-foreground block">Tracking Mode</span>
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-foreground block">Tracking Mode</span>
+                <span className="text-[10px] text-[#7467E8] font-bold">
+                  {settings.mode === 'calendar' ? 'Calendar Mode Active' : 'Classic Mode Active'}
+                </span>
+              </div>
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
@@ -825,7 +1136,7 @@ const Timetable: React.FC = () => {
                   }`}
                 >
                   <span className="block text-xs">Calendar Date Mode</span>
-                  <span className="block text-[10px] opacity-80 font-normal mt-0.5">Date-by-date tracking</span>
+                  <span className="block text-[10px] opacity-80 font-normal mt-0.5">Date-by-date calendar</span>
                 </button>
 
                 <button

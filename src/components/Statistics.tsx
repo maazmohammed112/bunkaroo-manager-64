@@ -125,7 +125,9 @@ const Statistics: React.FC = () => {
       exportedAt: new Date().toISOString(),
       subjects: db.getSync<Subject[]>('subjects', []),
       notes: db.getSync('notes', []),
-      userData: db.getSync('userData', null)
+      userData: db.getSync('userData', null),
+      timetable_settings: db.getSync('timetable_settings', null),
+      attendance_daily_logs: db.getSync('attendance_daily_logs', {})
     };
     const jsonString = JSON.stringify(backup, null, 2);
     setExportData(jsonString);
@@ -167,6 +169,14 @@ const Statistics: React.FC = () => {
         }
         if (parsed.userData) {
           db.set('userData', parsed.userData);
+        }
+        if (parsed.timetable_settings) {
+          db.set('timetable_settings', parsed.timetable_settings);
+          db.set('bunkbuddy_mode_selected', true);
+          window.dispatchEvent(new CustomEvent('timetable-settings-updated', { detail: parsed.timetable_settings }));
+        }
+        if (parsed.attendance_daily_logs) {
+          db.set('attendance_daily_logs', parsed.attendance_daily_logs);
         }
       }
 

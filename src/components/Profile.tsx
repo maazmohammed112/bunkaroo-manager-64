@@ -24,7 +24,10 @@ import {
   Sun,
   Moon,
   Palette,
-  Compass
+  Compass,
+  DownloadCloud,
+  UploadCloud,
+  FileJson
 } from 'lucide-react';
 import { CircularProgressbar, buildStyles } from 'react-circular-progressbar';
 import 'react-circular-progressbar/dist/styles.css';
@@ -34,12 +37,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
+import { db } from '@/utils/storageDB';
 
 interface ProfileProps {
   onClose?: () => void;
 }
 
-type SectionKey = 'editProfile' | 'appearance' | 'security' | 'stats' | 'developer' | 'logout' | 'photo' | null;
+type SectionKey = 'editProfile' | 'appearance' | 'security' | 'stats' | 'backup' | 'developer' | 'logout' | 'photo' | null;
 
 const Profile: React.FC<ProfileProps> = ({ onClose }) => {
   const { 
@@ -71,6 +75,98 @@ const Profile: React.FC<ProfileProps> = ({ onClose }) => {
 
   // File input ref for avatar upload
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Backup state & refs
+  const [profileImportText, setProfileImportText] = useState('');
+  const backupFileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleProfileExport = () => {
+    const backup = {
+      app: 'BunkBuddy',
+      version: '1.0',
+      exportedAt: new Date().toISOString(),
+      subjects: db.getSync('subjects', []),
+      notes: db.getSync('notes', []),
+      userData: db.getSync('userData', null),
+      timetable_settings: db.getSync('timetable_settings', null),
+      attendance_daily_logs: db.getSync('attendance_daily_logs', {})
+    };
+    const jsonString = JSON.stringify(backup, null, 2);
+    const blob = new Blob([jsonString], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `bunkbuddy-backup-${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast({
+      title: "Backup Downloaded",
+      description: "Your academic backup JSON file has been downloaded safely."
+    });
+  };
+
+  const handleProfileImport = (dataString: string) => {
+    if (!dataString.trim()) {
+      toast({
+        title: "Empty Backup",
+        description: "Please provide a valid backup JSON string or choose a file.",
+        variant: "destructive"
+      });
+      return;
+    }
+    try {
+      const parsed = JSON.parse(dataString);
+      let count = 0;
+      if (Array.isArray(parsed)) {
+        db.set('subjects', parsed);
+        count = parsed.length;
+      } else if (parsed && typeof parsed === 'object') {
+        if (Array.isArray(parsed.subjects)) {
+          db.set('subjects', parsed.subjects);
+          count = parsed.subjects.length;
+        }
+        if (Array.isArray(parsed.notes)) db.set('notes', parsed.notes);
+        if (parsed.userData) db.set('userData', parsed.userData);
+        if (parsed.timetable_settings) {
+          db.set('timetable_settings', parsed.timetable_settings);
+          db.set('bunkbuddy_mode_selected', true);
+          window.dispatchEvent(new CustomEvent('timetable-settings-updated', { detail: parsed.timetable_settings }));
+        }
+        if (parsed.attendance_daily_logs) db.set('attendance_daily_logs', parsed.attendance_daily_logs);
+      }
+      toast({
+        title: "Backup Restored Successfully",
+        description: `Restored ${count} subjects and your attendance logs.`
+      });
+      setProfileImportText('');
+      setActiveSection(null);
+      setTimeout(() => window.location.reload(), 700);
+    } catch (err) {
+      toast({
+        title: "Invalid Backup Format",
+        description: "Failed to parse JSON backup. Please check the file formatting.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleBackupFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target?.result as string;
+      if (content) {
+        handleProfileImport(content);
+      }
+    };
+    reader.readAsText(file);
+    if (backupFileInputRef.current) {
+      backupFileInputRef.current.value = '';
+    }
+  };
 
   if (!userData) return null;
 
@@ -768,6 +864,108 @@ const Profile: React.FC<ProfileProps> = ({ onClose }) => {
                           </span>
                         )}
                       </p>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
+          {/* Item: Cross-Device Backup & Restore */}
+          <div className="rounded-[22px] border border-[#E8E7EF] dark:border-white/10 bg-white dark:bg-[#181A22] overflow-hidden transition-all shadow-xs hover:border-[#7467E8]/40">
+            <button
+              type="button"
+              onClick={() => toggleSection('backup')}
+              className="w-full flex items-center justify-between p-4 text-left cursor-pointer transition-colors outline-none focus:outline-none select-none hover:bg-black/[0.015] dark:hover:bg-white/[0.015]"
+            >
+              <div className="flex items-center gap-3.5">
+                <div className="w-10 h-10 rounded-2xl bg-[#E8E4FF] text-[#7467E8] dark:bg-[#7467E8]/20 dark:text-[#A59BFF] flex items-center justify-center flex-shrink-0">
+                  <DownloadCloud size={18} strokeWidth={2} />
+                </div>
+                <div>
+                  <h4 className="text-xs sm:text-sm font-bold text-foreground font-display">
+                    Cross-Device Backup & Restore
+                  </h4>
+                  <p className="text-[11px] text-[#666675] dark:text-[#9292A2]">
+                    Export JSON backup or transfer to another device
+                  </p>
+                </div>
+              </div>
+              <div className="text-muted-foreground pl-2">
+                <ChevronDown
+                  size={18}
+                  className={`transition-transform duration-200 ${
+                    activeSection === 'backup' ? 'rotate-180 text-[#7467E8]' : ''
+                  }`}
+                />
+              </div>
+            </button>
+
+            {/* Inline Backup Section */}
+            <AnimatePresence>
+              {activeSection === 'backup' && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="overflow-hidden border-t border-[#E8E7EF] dark:border-white/[0.08] bg-[#F8F8FC] dark:bg-[#15161F] p-5 sm:p-6 space-y-4"
+                >
+                  <div className="p-3.5 rounded-[18px] bg-white dark:bg-[#181A22] border border-[#E8E7EF] dark:border-white/10 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-foreground">Export Backup</span>
+                      <Button
+                        size="sm"
+                        onClick={handleProfileExport}
+                        className="rounded-full text-xs font-bold bg-[#7467E8] hover:bg-[#6658DF] text-white gap-1.5 h-8 px-3.5 cursor-pointer"
+                      >
+                        <DownloadCloud size={13} strokeWidth={2.2} />
+                        Download JSON
+                      </Button>
+                    </div>
+                    <p className="text-[11px] text-[#666675] dark:text-[#9292A2] leading-relaxed">
+                      Download a single JSON file containing all your subjects, attendance logs, notes, and profile data.
+                    </p>
+                  </div>
+
+                  <div className="p-3.5 rounded-[18px] bg-white dark:bg-[#181A22] border border-[#E8E7EF] dark:border-white/10 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-foreground">Restore From Backup</span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => backupFileInputRef.current?.click()}
+                        className="rounded-full text-xs font-semibold gap-1.5 h-8 px-3 cursor-pointer"
+                      >
+                        <UploadCloud size={13} strokeWidth={2.2} />
+                        Upload File
+                      </Button>
+                    </div>
+                    <input
+                      ref={backupFileInputRef}
+                      type="file"
+                      accept=".json,application/json"
+                      className="hidden"
+                      onChange={handleBackupFileSelect}
+                    />
+
+                    <div className="space-y-2">
+                      <textarea
+                        value={profileImportText}
+                        onChange={(e) => setProfileImportText(e.target.value)}
+                        placeholder="Or paste backup JSON code here..."
+                        rows={2}
+                        className="w-full text-xs p-2.5 rounded-xl border border-[#E8E7EF] dark:border-white/10 bg-[#F6F6FA] dark:bg-[#111218] text-foreground focus:outline-none focus:ring-1 focus:ring-[#7467E8] font-mono resize-none"
+                      />
+                      {profileImportText.trim() && (
+                        <Button
+                          size="sm"
+                          onClick={() => handleProfileImport(profileImportText)}
+                          className="w-full rounded-full text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer h-8"
+                        >
+                          Restore Pasted Backup
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </motion.div>
